@@ -2,6 +2,7 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.eShopWeb.Infrastructure;
@@ -11,7 +12,6 @@ using Microsoft.eShopWeb.PublicApi.Extensions;
 using Microsoft.eShopWeb.PublicApi.Middleware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Diagnostics.HealthChecks;   // ← add this
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NimblePros.Metronome;
@@ -60,9 +60,13 @@ builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
 builder.Services.AddSwagger();
 
 // 12) HealthChecks (with a "self" check to always return Healthy)
+// HealthChecks: existing checks from Aspire defaults
+// add a unique "selfapi" check so overall status is Healthy
+builder.Services
+       // 12) HealthChecks (with a "selfapi" check to always return Healthy)
 builder.Services
        .AddHealthChecks()
-       .AddCheck("self", () => HealthCheckResult.Healthy());
+       .AddCheck("selfapi", () => HealthCheckResult.Healthy());
 
 // 13) Metronome & Seq
 builder.Services.AddMetronome();
