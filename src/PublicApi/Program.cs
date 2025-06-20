@@ -2,7 +2,6 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.eShopWeb.Infrastructure;
@@ -12,9 +11,11 @@ using Microsoft.eShopWeb.PublicApi.Extensions;
 using Microsoft.eShopWeb.PublicApi.Middleware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NimblePros.Metronome;
+using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,13 +60,8 @@ builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
 // 11) Swagger
 builder.Services.AddSwagger();
 
-// 12) HealthChecks (with a "self" check to always return Healthy)
-// HealthChecks: existing checks from Aspire defaults
-// add a unique "selfapi" check so overall status is Healthy
-builder.Services
-       // 12) HealthChecks (with a "selfapi" check to always return Healthy)
-builder.Services
-       .AddHealthChecks()
+// 12) HealthChecks (with a "selfapi" check to always return Healthy)
+builder.Services.AddHealthChecks()
        .AddCheck("selfapi", () => HealthCheckResult.Healthy());
 
 // 13) Metronome & Seq
@@ -101,8 +97,21 @@ app.UseAuthorization();
 app.UseFastEndpoints();
 app.UseSwaggerGen();
 
-// 18) Map the health-check endpoint at /api/health
-app.MapHealthChecks("/api/health");
+// 18) Map only the "selfapi" health-check at /api/health
+app.MapHealthChecks(
+    "/api/health",
+    new HealthCheckOptions {
+        Predicate = registration => registration.Name == "selfapi",
+        ResponseWriter = async (context, report) =>
+        {
+            context.Response.ContentType = "application/json";
+            var result = System.Text.Json.JsonSerializer.Serialize(
+                new { status = report.Status.ToString() }
+            );
+            await context.Response.WriteAsync(result);
+        }
+    }
+);
 
 app.Logger.LogInformation("LAUNCHING PublicApi");
 app.Run();
