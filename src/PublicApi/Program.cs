@@ -2,7 +2,7 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;     // ← health‐checks
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.eShopWeb.Infrastructure;
 using Microsoft.eShopWeb.Infrastructure.Identity;
@@ -23,7 +23,7 @@ builder.AddAspireServiceDefaults();
 // 2) FastEndpoints & Swagger
 builder.Services.AddFastEndpoints();
 
-// 3) Force‐load test config if needed
+// 3) Force-load test config if needed
 builder.Configuration.AddConfigurationFile("appsettings.test.json");
 
 // 4) Database contexts (local)
@@ -58,8 +58,10 @@ builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
 // 11) Swagger
 builder.Services.AddSwagger();
 
-// 12) HealthChecks (ADDED)
-builder.Services.AddHealthChecks();
+// 12) HealthChecks (with a "self" check to always return Healthy)
+builder.Services
+       .AddHealthChecks()
+       .AddCheck("self", () => HealthCheckResult.Healthy());
 
 // 13) Metronome & Seq
 builder.Services.AddMetronome();
@@ -94,7 +96,7 @@ app.UseAuthorization();
 app.UseFastEndpoints();
 app.UseSwaggerGen();
 
-// 18) Map the health-check endpoint (ADDED)
+// 18) Map the health-check endpoint at /api/health
 app.MapHealthChecks("/api/health");
 
 app.Logger.LogInformation("LAUNCHING PublicApi");
