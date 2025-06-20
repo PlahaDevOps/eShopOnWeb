@@ -2,6 +2,7 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;     // ← health‐checks
 using Microsoft.AspNetCore.Identity;
 using Microsoft.eShopWeb.Infrastructure;
 using Microsoft.eShopWeb.Infrastructure.Identity;
@@ -16,73 +17,85 @@ using NimblePros.Metronome;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add service defaults & Aspire components.
+// 1) Add service defaults & Aspire components.
 builder.AddAspireServiceDefaults();
 
+// 2) FastEndpoints & Swagger
 builder.Services.AddFastEndpoints();
 
-// Use to force loading of appsettings.json of test project
+// 3) Force‐load test config if needed
 builder.Configuration.AddConfigurationFile("appsettings.test.json");
 
+// 4) Database contexts (local)
 builder.Services.ConfigureLocalDatabaseContexts(builder.Configuration);
 
+// 5) Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
-        .AddRoles<IdentityRole>()
-        .AddEntityFrameworkStores<AppIdentityDbContext>()
-        .AddDefaultTokenProviders();
+       .AddRoles<IdentityRole>()
+       .AddEntityFrameworkStores<AppIdentityDbContext>()
+       .AddDefaultTokenProviders();
 
+// 6) Domain services
 builder.Services.AddCustomServices(builder.Configuration);
 
+// 7) Memory cache
 builder.Services.AddMemoryCache();
 
+// 8) JWT Authentication
 builder.Services.AddJwtAuthentication();
 
+// 9) CORS
 const string CORS_POLICY = "CorsPolicy";
-
 var configSection = builder.Configuration.GetRequiredSection(BaseUrlConfiguration.CONFIG_NAME);
 builder.Services.Configure<BaseUrlConfiguration>(configSection);
 var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 builder.Services.AddCorsPolicy(CORS_POLICY, baseUrlConfig!);
 
+// 10) Controllers & AutoMapper
 builder.Services.AddControllers();
-
-// TODO: Consider removing AutoMapper dependency (FastEndpoints already has its own Mapper support)
 builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
 
+// 11) Swagger
 builder.Services.AddSwagger();
 
+// 12) HealthChecks (ADDED)
+builder.Services.AddHealthChecks();
+
+// 13) Metronome & Seq
 builder.Services.AddMetronome();
 string seqUrl = builder.Configuration["Seq:ServerUrl"] ?? "http://localhost:5341";
-
 builder.AddSeqEndpoint(connectionName: "seq", options =>
 {
-    options.ServerUrl = seqUrl;
+  options.ServerUrl = seqUrl;
 });
 
 var app = builder.Build();
 
 app.Logger.LogInformation("PublicApi App created...");
 
+// 14) Data seeding
 await app.SeedDatabaseAsync();
 
+// 15) Dev exception page
 if (app.Environment.IsDevelopment())
 {
-    app.UseDeveloperExceptionPage();
+  app.UseDeveloperExceptionPage();
 }
 
+// 16) Global exception handler
 app.UseMiddleware<ExceptionMiddleware>();
 
 app.UseHttpsRedirection();
-
 app.UseRouting();
-
 app.UseCors(CORS_POLICY);
-
 app.UseAuthorization();
 
+// 17) FastEndpoints & Swagger UI
 app.UseFastEndpoints();
-
 app.UseSwaggerGen();
+
+// 18) Map the health-check endpoint (ADDED)
+app.MapHealthChecks("/api/health");
 
 app.Logger.LogInformation("LAUNCHING PublicApi");
 app.Run();
