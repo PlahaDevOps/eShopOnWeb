@@ -95,15 +95,15 @@ app.Logger.LogInformation("App created...");
 
 await app.SeedDatabaseAsync();
 
-var catalogBaseUrl = builder.Configuration.GetValue(typeof(string), "CatalogBaseUrl") as string;
-if (!string.IsNullOrEmpty(catalogBaseUrl))
-{
-    app.Use((context, next) =>
-    {
-        context.Request.PathBase = new PathString(catalogBaseUrl);
-        return next();
-    });
-}
+// var catalogBaseUrl = builder.Configuration.GetValue(typeof(string), "CatalogBaseUrl") as string;
+// if (!string.IsNullOrEmpty(catalogBaseUrl))
+// {
+ //   app.Use((context, next) =>
+ //   {
+  //      context.Request.PathBase = new PathString(catalogBaseUrl);
+  //      return next();
+ //   });
+//}
 
 
 app.UseCustomHealthChecks();
