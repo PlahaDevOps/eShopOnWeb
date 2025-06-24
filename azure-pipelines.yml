@@ -1,0 +1,99 @@
+trigger:
+  branches:
+    include:
+    - main
+variables:
+- name: buildConfiguration
+  value: 'Release'
+- name: webProject
+  value: 'src/Web/Web.csproj'
+- name: apiProject
+  value: 'src/PublicApi/PublicApi.csproj'
+- name: webPublishDir
+  value: '$(Build.ArtifactStagingDirectory)/web'
+- name: apiPublishDir
+  value: '$(Build.ArtifactStagingDirectory)/api'
+stages:
+- stage: Build
+  displayName: 'Build, Test & Publish'
+  jobs:
+  - job: Build
+    pool:
+      name: WinServerCorePool
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        repository: self
+    - task: UseDotNet@2
+      displayName: 'Install .NET 9 SDK'
+      inputs:
+        packageType: sdk
+        version: '9.0.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+    - task: CmdLine@2
+      displayName: 'Restore Dependencies'
+      inputs:
+        script: dotnet restore eShopOnWeb.sln
+    - task: CmdLine@2
+      displayName: 'Build Solution'
+      inputs:
+        script: dotnet build eShopOnWeb.sln --configuration $(buildConfiguration)
+    - task: CmdLine@2
+      displayName: 'Run Tests'
+      inputs:
+        script: dotnet test eShopOnWeb.sln --configuration $(buildConfiguration) --no-build
+    - task: CmdLine@2
+      displayName: 'Publish Web Site'
+      inputs:
+        script: dotnet publish $(webProject) --configuration $(buildConfiguration) --output $(webPublishDir)
+    - task: CmdLine@2
+      displayName: 'Publish Public API'
+      inputs:
+        script: dotnet publish $(apiProject) --configuration $(buildConfiguration) --output $(apiPublishDir)
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'drop'
+- stage: Deploy
+  displayName: 'Deploy to IIS on Windows Server Core'
+  dependsOn:
+  - Build
+  condition: succeeded()
+  jobs:
+  - job: Deploy
+    pool:
+      name: WinServerCorePool
+    steps:
+    - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+      inputs:
+        alias: current
+        artifact: drop
+    - task: PowerShell@2
+      displayName: 'Copy Web App to IIS directory'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $webTarget = "C:\inetpub\wwwroot\eShopOnWeb"
+          if (Test-Path $webTarget) { Remove-Item "$webTarget\*" -Recurse -Force }
+          Copy-Item "$(Pipeline.Workspace)\drop\web\*" $webTarget -Recurse
+    - task: PowerShell@2
+      displayName: 'Copy API to IIS directory'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $apiTarget = "C:\inetpub\wwwroot\eShopOnWebApi"
+          if (Test-Path $apiTarget) { Remove-Item "$apiTarget\*" -Recurse -Force }
+          Copy-Item "$(Pipeline.Workspace)\drop\api\*" $apiTarget -Recurse
+    - task: PowerShell@2
+      displayName: 'Restart IIS'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $iisFeature = Get-WindowsFeature -Name Web-Server
+          if ($iisFeature -and $iisFeature.Installed) {
+            Write-Output "IIS is installed. Restarting W3SVC..."
+            Restart-Service -Name 'W3SVC' -Force
+          } else {
+            Write-Warning "IIS (Web-Server) is not installed. Skipping restart."
+          }
