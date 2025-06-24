@@ -1,1 +1,1 @@
-Test pipeline trigger
+trigger-test
