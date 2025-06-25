@@ -1,5 +1,12 @@
 # install-iis-dotnet.ps1
 
+param(
+    [string]$OrgUrl = "https://dev.azure.com/weworku4/",
+    [string]$Pat,
+    [string]$PoolName = "WinServerCorePool",
+    [string]$AgentName = "eShopOnWeb-VM"
+)
+
 Write-Host "Step 0: Checking for Administrator rights"
 If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Error "You must run this script as an Administrator!"
@@ -131,10 +138,47 @@ if (-not (Get-NetFirewallRule -DisplayName "Allow API" -ErrorAction SilentlyCont
     Write-Host "Firewall rule for port 8080 already exists."
 }
 
-Write-Host "Step 10: Restarting sites and app pools"
-Restart-WebAppPool -Name "eShopOnWeb"
-Restart-WebAppPool -Name "eShopOnWebApi"
-Restart-Website -Name "eShopOnWeb"
-Restart-Website -Name "eShopOnWebApi"
+Write-Host "Step 10: Installing and Configuring Azure Pipelines Agent"
+$agentPath = "C:\azagent"
+
+if (-not (Test-Path $agentPath)) {
+    Write-Host "Downloading Azure Pipelines Agent..."
+    $agentUrl = "https://vstsagentpackage.azureedge.net/agent/3.242.0/vsts-agent-win-x64-3.242.0.zip"
+    $agentZip = "$env:TEMP\vsts-agent-win-x64.zip"
+    Invoke-WebRequest -Uri $agentUrl -OutFile $agentZip
+    Expand-Archive -Path $agentZip -DestinationPath $agentPath -Force
+}
+
+# Check if agent is already configured
+if (Test-Path "$agentPath\.agent") {
+    Write-Host "Azure Pipelines Agent is already configured. Skipping configuration."
+} else {
+    Write-Host "Configuring Azure Pipelines Agent..."
+    $configArgs = @(
+        "--unattended",
+        "--url", $OrgUrl,
+        "--auth", "pat",
+        "--token", $Pat,
+        "--pool", $PoolName,
+        "--agent", $AgentName,
+        "--work", "_work",
+        "--runAsService",
+        "--replace"
+    )
+    Push-Location $agentPath
+    & .\config.cmd @configArgs
+    Pop-Location
+}
+
+# Start the agent service if not running
+$service = Get-Service | Where-Object { $_.Name -like "vstsagent*" }
+if ($service -and $service.Status -ne "Running") {
+    Start-Service $service.Name
+    Write-Host "Azure Pipelines Agent service started."
+} elseif ($service) {
+    Write-Host "Azure Pipelines Agent service already running."
+} else {
+    Write-Host "No Azure Pipelines Agent service found. Please check agent logs."
+}
 
 Write-Host "✅ Script completed successfully!"
