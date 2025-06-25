@@ -21,9 +21,7 @@ stages:
     pool:
       name: WinServerCorePool
     steps:
-    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
-      inputs:
-        repository: self
+    - checkout: self
     - task: UseDotNet@2
       displayName: 'Install .NET 9 SDK'
       inputs:
