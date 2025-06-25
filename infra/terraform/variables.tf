@@ -45,6 +45,7 @@ variable "admin_password" {
 }
 
 variable "nsg_rules" {
+  description = "List of NSG rules"
   type = list(object({
     name                       = string
     priority                   = number
@@ -56,5 +57,61 @@ variable "nsg_rules" {
     source_address_prefix      = string
     destination_address_prefix = string
   }))
-  description = "List of NSG security rules"
+  default = [
+    {
+      name                       = "open-port-3389"
+      priority                   = 900
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "*"
+      source_port_range          = "*"
+      destination_port_range     = "3389"
+      source_address_prefix      = "*"
+      destination_address_prefix = "*"
+    },
+    {
+      name                       = "rdp"
+      priority                   = 1000
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "3389"
+      source_address_prefix      = "*"
+      destination_address_prefix = "*"
+    },
+    {
+      name                       = "Allow-HTTP"
+      priority                   = 1010
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "80"
+      source_address_prefix      = "*"
+      destination_address_prefix = "*"
+    },
+    {
+      name                       = "AllowAnyCustom8080Inbound"
+      priority                   = 1070
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "8080"
+      source_address_prefix      = "*"
+      destination_address_prefix = "*"
+    },
+    {
+      name                       = "AllowAnyCustom22Inbound"
+      priority                   = 1080
+      direction                  = "Inbound"
+      access                     = "Allow"
+      protocol                   = "Tcp"
+      source_port_range          = "*"
+      destination_port_range     = "22"
+      source_address_prefix      = "*"
+      destination_address_prefix = "*"
+    }
+  ]
 }

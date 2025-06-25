@@ -76,7 +76,7 @@ resource "azurerm_windows_virtual_machine" "vm" {
 
   os_disk {
     caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
+    storage_account_type = "Premium_LRS"
     name                 = "${var.vm_name}_OsDisk"
   }
 
@@ -86,4 +86,24 @@ resource "azurerm_windows_virtual_machine" "vm" {
     sku       = "2019-Datacenter-Core"
     version   = "latest"
   }
+}
+
+resource "azurerm_virtual_machine_extension" "vm_custom_script" {
+  name                 = "InstallIISAndDotNet"
+  virtual_machine_id   = azurerm_windows_virtual_machine.vm.id
+  publisher            = "Microsoft.Compute"
+  type                 = "CustomScriptExtension"
+  type_handler_version = "1.10"
+
+  settings = <<SETTINGS
+    {
+      "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1"
+    }
+SETTINGS
+
+  protected_settings = <<PROTECTED_SETTINGS
+    {
+      "script": "${file("scripts/install-iis-dotnet.ps1")}"
+    }
+PROTECTED_SETTINGS
 }
