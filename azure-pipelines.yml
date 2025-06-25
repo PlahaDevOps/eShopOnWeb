@@ -2,6 +2,13 @@ trigger:
   branches:
     include:
     - main
+
+# Optional: Add pull request validation
+pr:
+  branches:
+    include:
+    - main
+
 variables:
 - name: buildConfiguration
   value: 'Release'
@@ -13,6 +20,7 @@ variables:
   value: '$(Build.ArtifactStagingDirectory)/web'
 - name: apiPublishDir
   value: '$(Build.ArtifactStagingDirectory)/api'
+
 stages:
 - stage: Build
   displayName: 'Build, Test & Publish'
@@ -21,40 +29,59 @@ stages:
     pool:
       name: WinServerCorePool
     steps:
-    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+    - task: Checkout@4
+      displayName: 'Checkout code'
       inputs:
         repository: self
+        clean: true
+    
     - task: UseDotNet@2
       displayName: 'Install .NET 9 SDK'
       inputs:
         packageType: sdk
         version: '9.0.x'
         installationPath: $(Agent.ToolsDirectory)/dotnet
+    
     - task: CmdLine@2
       displayName: 'Restore Dependencies'
       inputs:
         script: dotnet restore eShopOnWeb.sln
+    
     - task: CmdLine@2
       displayName: 'Build Solution'
       inputs:
-        script: dotnet build eShopOnWeb.sln --configuration $(buildConfiguration)
+        script: dotnet build eShopOnWeb.sln --configuration $(buildConfiguration) --no-restore
+    
     - task: CmdLine@2
       displayName: 'Run Tests'
       inputs:
-        script: dotnet test eShopOnWeb.sln --configuration $(buildConfiguration) --no-build
+        script: dotnet test eShopOnWeb.sln --configuration $(buildConfiguration) --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+    
     - task: CmdLine@2
       displayName: 'Publish Web Site'
       inputs:
-        script: dotnet publish $(webProject) --configuration $(buildConfiguration) --output $(webPublishDir)
+        script: dotnet publish $(webProject) --configuration $(buildConfiguration) --output $(webPublishDir) --no-build
+    
     - task: CmdLine@2
       displayName: 'Publish Public API'
       inputs:
-        script: dotnet publish $(apiProject) --configuration $(buildConfiguration) --output $(apiPublishDir)
+        script: dotnet publish $(apiProject) --configuration $(buildConfiguration) --output $(apiPublishDir) --no-build
+    
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Artifacts'
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)'
         artifact: 'drop'
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/**/*.trx'
+        mergeTestResults: true
+        testRunTitle: 'eShopOnWeb Tests'
+      condition: succeededOrFailed()
+
 - stage: Deploy
   displayName: 'Deploy to IIS on Windows Server Core'
   dependsOn:
@@ -65,35 +92,109 @@ stages:
     pool:
       name: WinServerCorePool
     steps:
-    - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Artifacts'
       inputs:
-        alias: current
         artifact: drop
+        path: '$(Pipeline.Workspace)'
+    
     - task: PowerShell@2
       displayName: 'Copy Web App to IIS directory'
       inputs:
         targetType: 'inline'
         script: |
           $webTarget = "C:\inetpub\wwwroot\eShopOnWeb"
-          if (Test-Path $webTarget) { Remove-Item "$webTarget\*" -Recurse -Force }
+          
+          # Create directory if it doesn't exist
+          if (!(Test-Path $webTarget)) {
+            New-Item -ItemType Directory -Path $webTarget -Force
+            Write-Output "Created directory: $webTarget"
+          }
+          
+          # Clean existing files
+          if (Test-Path $webTarget) { 
+            Remove-Item "$webTarget\*" -Recurse -Force 
+            Write-Output "Cleaned existing files from: $webTarget"
+          }
+          
+          # Copy new files
           Copy-Item "$(Pipeline.Workspace)\drop\web\*" $webTarget -Recurse
+          Write-Output "Successfully copied web app to: $webTarget"
+    
     - task: PowerShell@2
       displayName: 'Copy API to IIS directory'
       inputs:
         targetType: 'inline'
         script: |
           $apiTarget = "C:\inetpub\wwwroot\eShopOnWebApi"
-          if (Test-Path $apiTarget) { Remove-Item "$apiTarget\*" -Recurse -Force }
+          
+          # Create directory if it doesn't exist
+          if (!(Test-Path $apiTarget)) {
+            New-Item -ItemType Directory -Path $apiTarget -Force
+            Write-Output "Created directory: $apiTarget"
+          }
+          
+          # Clean existing files
+          if (Test-Path $apiTarget) { 
+            Remove-Item "$apiTarget\*" -Recurse -Force 
+            Write-Output "Cleaned existing files from: $apiTarget"
+          }
+          
+          # Copy new files
           Copy-Item "$(Pipeline.Workspace)\drop\api\*" $apiTarget -Recurse
+          Write-Output "Successfully copied API to: $apiTarget"
+    
     - task: PowerShell@2
       displayName: 'Restart IIS'
       inputs:
         targetType: 'inline'
         script: |
-          $iisFeature = Get-WindowsFeature -Name Web-Server
-          if ($iisFeature -and $iisFeature.Installed) {
-            Write-Output "IIS is installed. Restarting W3SVC..."
-            Restart-Service -Name 'W3SVC' -Force
-          } else {
-            Write-Warning "IIS (Web-Server) is not installed. Skipping restart."
+          try {
+            $iisFeature = Get-WindowsFeature -Name Web-Server
+            if ($iisFeature -and $iisFeature.Installed) {
+              Write-Output "IIS is installed. Restarting W3SVC..."
+              Restart-Service -Name 'W3SVC' -Force
+              Write-Output "IIS restarted successfully"
+              
+              # Verify the service is running
+              Start-Sleep -Seconds 5
+              $service = Get-Service -Name 'W3SVC'
+              if ($service.Status -eq 'Running') {
+                Write-Output "IIS service is running successfully"
+              } else {
+                Write-Warning "IIS service status: $($service.Status)"
+              }
+            } else {
+              Write-Warning "IIS (Web-Server) is not installed. Skipping restart."
+            }
+          } catch {
+            Write-Error "Failed to restart IIS: $($_.Exception.Message)"
+            exit 1
           }
+    
+    - task: PowerShell@2
+      displayName: 'Verify Deployment'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Output "=== Deployment Verification ==="
+          
+          # Check if web app files exist
+          $webTarget = "C:\inetpub\wwwroot\eShopOnWeb"
+          if (Test-Path $webTarget) {
+            $webFiles = Get-ChildItem $webTarget -Recurse | Measure-Object
+            Write-Output "Web app deployed: $($webFiles.Count) files in $webTarget"
+          } else {
+            Write-Warning "Web app directory not found: $webTarget"
+          }
+          
+          # Check if API files exist
+          $apiTarget = "C:\inetpub\wwwroot\eShopOnWebApi"
+          if (Test-Path $apiTarget) {
+            $apiFiles = Get-ChildItem $apiTarget -Recurse | Measure-Object
+            Write-Output "API deployed: $($apiFiles.Count) files in $apiTarget"
+          } else {
+            Write-Warning "API directory not found: $apiTarget"
+          }
+          
+          Write-Output "=== Deployment Complete ==="
