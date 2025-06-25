@@ -6,7 +6,7 @@ nsg_name            = "WinCoreLabNSG"
 vm_name             = "WinCoreLab"
 vm_size             = "Standard_B2ms"
 admin_username      = "azureuser"
-admin_password      = "YourSecureP@ssword123"
+admin_password      = "P@ssw0rd123!"
 
 nsg_rules = [
   {
