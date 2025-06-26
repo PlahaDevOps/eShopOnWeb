@@ -29,11 +29,9 @@ stages:
     pool:
       name: WinServerCorePool
     steps:
-    - task: Checkout@4
+    - checkout: self
+      clean: true
       displayName: 'Checkout code'
-      inputs:
-        repository: self
-        clean: true
     
     - task: UseDotNet@2
       displayName: 'Install .NET 9 SDK'
