@@ -133,30 +133,16 @@ stages:
     
     - task: PowerShell@2
       displayName: 'Restart IIS'
+      continueOnError: true
       inputs:
         targetType: 'inline'
         script: |
-          try {
-            $iisFeature = Get-WindowsFeature -Name Web-Server
-            if ($iisFeature -and $iisFeature.Installed) {
-              Write-Output "IIS is installed. Restarting W3SVC..."
+          $service = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
+          if ($service) {
               Restart-Service -Name 'W3SVC' -Force
               Write-Output "IIS restarted successfully"
-              
-              # Verify the service is running
-              Start-Sleep -Seconds 5
-              $service = Get-Service -Name 'W3SVC'
-              if ($service.Status -eq 'Running') {
-                Write-Output "IIS service is running successfully"
-              } else {
-                Write-Warning "IIS service status: $($service.Status)"
-              }
-            } else {
-              Write-Warning "IIS (Web-Server) is not installed. Skipping restart."
-            }
-          } catch {
-            Write-Error "Failed to restart IIS: $($_.Exception.Message)"
-            exit 1
+          } else {
+              Write-Warning "W3SVC service not found. Skipping IIS restart."
           }
     
     - task: PowerShell@2
