@@ -260,3 +260,10 @@ pub/
 .devcontainer
 
 .azure
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
