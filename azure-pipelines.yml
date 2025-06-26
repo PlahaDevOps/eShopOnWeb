@@ -132,6 +132,14 @@ stages:
           Write-Output "Successfully copied API to: $apiTarget"
     
     - task: PowerShell@2
+      displayName: 'Set IIS Site Physical Path'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Import-Module WebAdministration
+          Set-ItemProperty 'IIS:\Sites\Default Web Site' -Name physicalPath -Value 'C:\deploy\Web'
+    
+    - task: PowerShell@2
       displayName: 'Restart IIS'
       continueOnError: true
       inputs:
