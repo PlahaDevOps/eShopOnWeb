@@ -29,9 +29,17 @@ stages:
     pool:
       name: WinServerCorePool
     steps:
+<<<<<<< feature/terraform-infra
     - checkout: self
       clean: true
       displayName: 'Checkout code'
+=======
+    - task: Checkout@4
+      displayName: 'Checkout code'
+      inputs:
+        repository: self
+        clean: true
+>>>>>>> main
     
     - task: UseDotNet@2
       displayName: 'Install .NET 9 SDK'
