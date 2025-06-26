@@ -52,8 +52,6 @@ resource "azurerm_network_interface" "vm_nic" {
     private_ip_address_allocation = "Dynamic"
     public_ip_address_id          = azurerm_public_ip.vm_public_ip.id
   }
-
-  network_security_group_id = azurerm_network_security_group.vm_nsg.id
 }
 
 resource "azurerm_public_ip" "vm_public_ip" {
@@ -97,13 +95,13 @@ resource "azurerm_virtual_machine_extension" "vm_custom_script" {
 
   settings = <<SETTINGS
     {
+      "fileUris": ["https://raw.githubusercontent.com/PlahaDevOps/eShopOnWeb/feature/terraform-infra/infra/terraform/scripts/install-iis-dotnet.ps1"],
       "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1 -OrgUrl '${var.azure_devops_org_url}' -Pat '${var.azure_devops_pat}' -PoolName '${var.agent_pool_name}' -AgentName '${var.agent_name}'"
     }
 SETTINGS
+}
 
-  protected_settings = <<PROTECTED_SETTINGS
-    {
-      "script": "${file("scripts/install-iis-dotnet.ps1")}"
-    }
-PROTECTED_SETTINGS
+resource "azurerm_network_interface_security_group_association" "vm_nic_nsg" {
+  network_interface_id      = azurerm_network_interface.vm_nic.id
+  network_security_group_id = azurerm_network_security_group.vm_nsg.id
 }

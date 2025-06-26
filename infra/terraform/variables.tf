@@ -115,3 +115,24 @@ variable "nsg_rules" {
     }
   ]
 }
+
+variable "azure_devops_org_url" {
+  type        = string
+  description = "Azure DevOps organization URL"
+}
+
+variable "azure_devops_pat" {
+  type        = string
+  description = "Azure DevOps Personal Access Token"
+  sensitive   = true
+}
+
+variable "agent_pool_name" {
+  type        = string
+  description = "Azure DevOps agent pool name"
+}
+
+variable "agent_name" {
+  type        = string
+  description = "Azure DevOps agent name"
+}
