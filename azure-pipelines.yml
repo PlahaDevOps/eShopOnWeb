@@ -102,7 +102,7 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $webTarget = "C:\deploy\Web"
+          $webTarget = "C:\inetpub\wwwroot"
           if (!(Test-Path $webTarget)) {
             New-Item -ItemType Directory -Path $webTarget -Force
             Write-Output "Created directory: $webTarget"
@@ -119,25 +119,13 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $apiTarget = "C:\deploy\PublicApi"
+          $apiTarget = "C:\inetpub\wwwroot\api"
           if (!(Test-Path $apiTarget)) {
             New-Item -ItemType Directory -Path $apiTarget -Force
-            Write-Output "Created directory: $apiTarget"
           }
-          if (Test-Path $apiTarget) { 
-            Remove-Item "$apiTarget\*" -Recurse -Force 
-            Write-Output "Cleaned existing files from: $apiTarget"
-          }
+          Remove-Item "$apiTarget\*" -Recurse -Force
           Copy-Item "$(Pipeline.Workspace)/drop/api/*" $apiTarget -Recurse
           Write-Output "Successfully copied API to: $apiTarget"
-    
-    - task: PowerShell@2
-      displayName: 'Set IIS Site Physical Path'
-      inputs:
-        targetType: 'inline'
-        script: |
-          Import-Module WebAdministration
-          Set-ItemProperty 'IIS:\Sites\Default Web Site' -Name physicalPath -Value 'C:\deploy\Web'
     
     - task: PowerShell@2
       displayName: 'Restart IIS'
@@ -161,7 +149,7 @@ stages:
           Write-Output "=== Deployment Verification ==="
           
           # Check if web app files exist
-          $webTarget = "C:\deploy\Web"
+          $webTarget = "C:\inetpub\wwwroot"
           if (Test-Path $webTarget) {
             $webFiles = Get-ChildItem $webTarget -Recurse | Measure-Object
             Write-Output "Web app deployed: $($webFiles.Count) files in $webTarget"
@@ -170,7 +158,7 @@ stages:
           }
           
           # Check if API files exist
-          $apiTarget = "C:\deploy\PublicApi"
+          $apiTarget = "C:\inetpub\wwwroot\api"
           if (Test-Path $apiTarget) {
             $apiFiles = Get-ChildItem $apiTarget -Recurse | Measure-Object
             Write-Output "API deployed: $($apiFiles.Count) files in $apiTarget"

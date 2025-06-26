@@ -53,9 +53,9 @@ if (-not $dotnetBundleInstalled) {
     Write-Host ".NET 9 Hosting Bundle already installed."
 }
 
-Write-Host "Step 4: Creating deployment folders"
-$webPath = "C:\deploy\Web"
-$apiPath = "C:\deploy\PublicApi"
+Write-Host "Step 4: Ensure API subfolder exists in default IIS path"
+$webPath = "C:\inetpub\wwwroot"
+$apiPath = "C:\inetpub\wwwroot\api"
 
 if (-not (Test-Path $webPath)) {
     New-Item -Path $webPath -ItemType Directory -Force | Out-Null
@@ -71,59 +71,21 @@ if (-not (Test-Path $apiPath)) {
     Write-Host "API folder already exists."
 }
 
-function Test-AppPoolExists { param([string]$Name); Test-Path "IIS:\AppPools\$Name" }
-
-Write-Host "Step 5: Setting up eShopOnWeb app pool"
-if (-not (Test-AppPoolExists -Name "eShopOnWeb")) {
-    New-WebAppPool -Name "eShopOnWeb"
-    Write-Host "App pool 'eShopOnWeb' created."
-} else {
-    Write-Host "App pool 'eShopOnWeb' already exists."
-}
-Set-ItemProperty IIS:\AppPools\eShopOnWeb -Name managedRuntimeVersion -Value "v4.0"
-Set-ItemProperty IIS:\AppPools\eShopOnWeb -Name processModel.identityType -Value "ApplicationPoolIdentity"
-
-Write-Host "Step 6: Setting up eShopOnWebApi app pool"
-if (-not (Test-AppPoolExists -Name "eShopOnWebApi")) {
-    New-WebAppPool -Name "eShopOnWebApi"
-    Write-Host "App pool 'eShopOnWebApi' created."
-} else {
-    Write-Host "App pool 'eShopOnWebApi' already exists."
-}
-Set-ItemProperty IIS:\AppPools\eShopOnWebApi -Name managedRuntimeVersion -Value "v4.0"
-Set-ItemProperty IIS:\AppPools\eShopOnWebApi -Name processModel.identityType -Value "ApplicationPoolIdentity"
-
-Write-Host "Step 7: Configuring eShopOnWeb site (port 80)"
-if (-not (Get-Website -Name "eShopOnWeb" -ErrorAction SilentlyContinue)) {
-    New-Website -Name "eShopOnWeb" -Port 80 -PhysicalPath $webPath -ApplicationPool "eShopOnWeb" -Force
-    Write-Host "Website 'eShopOnWeb' created."
-} else {
-    Write-Host "Website 'eShopOnWeb' already exists. Updating settings..."
-    Set-ItemProperty "IIS:\Sites\eShopOnWeb" -Name physicalPath -Value $webPath
-    Set-ItemProperty "IIS:\Sites\eShopOnWeb" -Name applicationPool -Value "eShopOnWeb"
-    if ((Get-Website -Name "eShopOnWeb").Bindings.Collection.bindingInformation -notcontains "*:80:") {
-        Remove-WebBinding -Name "eShopOnWeb" -Port 80 -Protocol "http" -ErrorAction SilentlyContinue
-        New-WebBinding -Name "eShopOnWeb" -Protocol "http" -Port 80 -IPAddress "*"
-        Write-Host "Port 80 binding ensured."
+Write-Host "Step 5: Ensure Default Web Site is started"
+$site = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+if ($site) {
+    if ($site.state -ne "Started") {
+        Start-Website -Name "Default Web Site"
+        Write-Host "Default Web Site started."
+    } else {
+        Write-Host "Default Web Site is already running."
     }
-}
-
-Write-Host "Step 8: Configuring eShopOnWebApi site (port 8080)"
-if (-not (Get-Website -Name "eShopOnWebApi" -ErrorAction SilentlyContinue)) {
-    New-Website -Name "eShopOnWebApi" -Port 8080 -PhysicalPath $apiPath -ApplicationPool "eShopOnWebApi" -Force
-    Write-Host "Website 'eShopOnWebApi' created."
 } else {
-    Write-Host "Website 'eShopOnWebApi' already exists. Updating settings..."
-    Set-ItemProperty "IIS:\Sites\eShopOnWebApi" -Name physicalPath -Value $apiPath
-    Set-ItemProperty "IIS:\Sites\eShopOnWebApi" -Name applicationPool -Value "eShopOnWebApi"
-    if ((Get-Website -Name "eShopOnWebApi").Bindings.Collection.bindingInformation -notcontains "*:8080:") {
-        Remove-WebBinding -Name "eShopOnWebApi" -Port 8080 -Protocol "http" -ErrorAction SilentlyContinue
-        New-WebBinding -Name "eShopOnWebApi" -Protocol "http" -Port 8080 -IPAddress "*"
-        Write-Host "Port 8080 binding ensured."
-    }
+    Write-Error "Default Web Site not found!"
+    exit 1
 }
 
-Write-Host "Step 9: Ensuring Windows Firewall rules"
+Write-Host "Step 6: Ensuring Windows Firewall rules"
 if (-not (Get-NetFirewallRule -DisplayName "Allow HTTP" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "Allow HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
     Write-Host "Firewall rule for port 80 created."
@@ -131,14 +93,7 @@ if (-not (Get-NetFirewallRule -DisplayName "Allow HTTP" -ErrorAction SilentlyCon
     Write-Host "Firewall rule for port 80 already exists."
 }
 
-if (-not (Get-NetFirewallRule -DisplayName "Allow API" -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName "Allow API" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
-    Write-Host "Firewall rule for port 8080 created."
-} else {
-    Write-Host "Firewall rule for port 8080 already exists."
-}
-
-Write-Host "Step 10: Installing and Configuring Azure Pipelines Agent"
+Write-Host "Step 7: Installing and Configuring Azure Pipelines Agent"
 $agentPath = "C:\azagent"
 $agentUrl = "https://download.agent.dev.azure.com/agent/4.258.1/vsts-agent-win-x64-4.258.1.zip"
 $agentZip = "$env:TEMP\vsts-agent-win-x64.zip"
