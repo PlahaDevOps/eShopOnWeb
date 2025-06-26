@@ -140,45 +140,73 @@ if (-not (Get-NetFirewallRule -DisplayName "Allow API" -ErrorAction SilentlyCont
 
 Write-Host "Step 10: Installing and Configuring Azure Pipelines Agent"
 $agentPath = "C:\azagent"
+$agentUrl = "https://download.agent.dev.azure.com/agent/4.258.1/vsts-agent-win-x64-4.258.1.zip"
+$agentZip = "$env:TEMP\vsts-agent-win-x64.zip"
 
-if (-not (Test-Path $agentPath)) {
-    Write-Host "Downloading Azure Pipelines Agent..."
-    $agentUrl = "https://vstsagentpackage.azureedge.net/agent/3.242.0/vsts-agent-win-x64-3.242.0.zip"
-    $agentZip = "$env:TEMP\vsts-agent-win-x64.zip"
-    Invoke-WebRequest -Uri $agentUrl -OutFile $agentZip
-    Expand-Archive -Path $agentZip -DestinationPath $agentPath -Force
+# Download agent if not already present
+if (-not (Test-Path $agentZip)) {
+    try {
+        Write-Host "Downloading Azure Pipelines Agent..."
+        Invoke-WebRequest -Uri $agentUrl -OutFile $agentZip -ErrorAction Stop
+        Write-Host "Agent downloaded."
+    } catch {
+        Write-Error "Failed to download Azure Pipelines Agent: $_"
+        exit 1
+    }
 }
 
-# Check if agent is already configured
-if (Test-Path "$agentPath\.agent") {
-    Write-Host "Azure Pipelines Agent is already configured. Skipping configuration."
+# Extract agent
+try {
+    Expand-Archive -Path $agentZip -DestinationPath $agentPath -Force
+    Write-Host "Agent extracted."
+} catch {
+    Write-Error "Failed to extract Azure Pipelines Agent: $_"
+    exit 1
+}
+
+# Check for config.cmd
+if (-not (Test-Path "$agentPath\\config.cmd")) {
+    Write-Error "config.cmd not found in $agentPath. Extraction failed."
+    exit 1
+}
+
+# Configure agent
+if (-not $Pat) {
+    Write-Error "PAT token is missing! Cannot configure agent."
+    exit 1
+}
+Write-Host "Configuring Azure Pipelines Agent..."
+$configArgs = @(
+    "--unattended",
+    "--url", $OrgUrl,
+    "--auth", "pat",
+    "--token", $Pat,
+    "--pool", $PoolName,
+    "--agent", $AgentName,
+    "--work", "_work",
+    "--runAsService",
+    "--replace"
+)
+Push-Location $agentPath
+& .\config.cmd @configArgs
+$exitCode = $LASTEXITCODE
+Pop-Location
+
+if ($exitCode -ne 0) {
+    Write-Error "Azure Pipelines Agent configuration failed with exit code $exitCode"
+    exit 1
 } else {
-    Write-Host "Configuring Azure Pipelines Agent..."
-    $configArgs = @(
-        "--unattended",
-        "--url", $OrgUrl,
-        "--auth", "pat",
-        "--token", $Pat,
-        "--pool", $PoolName,
-        "--agent", $AgentName,
-        "--work", "_work",
-        "--runAsService",
-        "--replace"
-    )
-    Push-Location $agentPath
-    & .\config.cmd @configArgs
-    Pop-Location
+    Write-Host "Agent configured successfully."
 }
 
 # Start the agent service if not running
-$service = Get-Service | Where-Object { $_.Name -like "vstsagent*" }
-if ($service -and $service.Status -ne "Running") {
-    Start-Service $service.Name
+$svcCmd = "$agentPath\\svc.cmd"
+if (Test-Path $svcCmd) {
+    & $svcCmd install
+    & $svcCmd start
     Write-Host "Azure Pipelines Agent service started."
-} elseif ($service) {
-    Write-Host "Azure Pipelines Agent service already running."
 } else {
-    Write-Host "No Azure Pipelines Agent service found. Please check agent logs."
+    Write-Host "svc.cmd not found. Please check agent installation."
 }
 
 Write-Host "✅ Script completed successfully!"
