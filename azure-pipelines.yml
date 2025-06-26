@@ -68,21 +68,21 @@ stages:
         artifact: drop
         path: '$(Pipeline.Workspace)/drop'
     - task: PowerShell@2
-      displayName: 'Copy Web App to IIS directory'
+      displayName: 'Copy Web App to deploy folder'
       inputs:
         targetType: 'inline'
         script: |
-          $webTarget = "C:\inetpub\wwwroot\eShopOnWeb"
+          $webTarget = "C:\deploy\Web"
           if (Test-Path $webTarget) { Remove-Item "$webTarget\*" -Recurse -Force }
-          Copy-Item "$(Pipeline.Workspace)\drop\web\*" $webTarget -Recurse
+          Copy-Item "$(Pipeline.Workspace)/drop/web/*" $webTarget -Recurse
     - task: PowerShell@2
-      displayName: 'Copy API to IIS directory'
+      displayName: 'Copy API to deploy folder'
       inputs:
         targetType: 'inline'
         script: |
-          $apiTarget = "C:\inetpub\wwwroot\eShopOnWebApi"
+          $apiTarget = "C:\deploy\PublicApi"
           if (Test-Path $apiTarget) { Remove-Item "$apiTarget\*" -Recurse -Force }
-          Copy-Item "$(Pipeline.Workspace)\drop\api\*" $apiTarget -Recurse
+          Copy-Item "$(Pipeline.Workspace)/drop/api/*" $apiTarget -Recurse
     - task: PowerShell@2
       displayName: 'Restart IIS'
       inputs:
