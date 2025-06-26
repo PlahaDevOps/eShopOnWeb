@@ -47,73 +47,23 @@ variable "admin_password" {
 variable "nsg_rules" {
   description = "List of NSG rules"
   type = list(object({
-    name                       = string
-    priority                   = number
-    direction                  = string
-    access                     = string
-    protocol                   = string
-    source_port_range          = string
-    destination_port_range     = string
-    source_address_prefix      = string
-    destination_address_prefix = string
+    name                                       = string
+    priority                                   = number
+    direction                                  = string
+    access                                     = string
+    protocol                                   = string
+    source_port_range                          = string
+    destination_port_range                     = string
+    source_address_prefix                      = string
+    destination_address_prefix                 = string
+    description                                = string
+    source_port_ranges                         = list(string)
+    destination_port_ranges                    = list(string)
+    source_address_prefixes                    = list(string)
+    destination_address_prefixes               = list(string)
+    source_application_security_group_ids      = list(string)
+    destination_application_security_group_ids = list(string)
   }))
-  default = [
-    {
-      name                       = "open-port-3389"
-      priority                   = 900
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "*"
-      source_port_range          = "*"
-      destination_port_range     = "3389"
-      source_address_prefix      = "*"
-      destination_address_prefix = "*"
-    },
-    {
-      name                       = "rdp"
-      priority                   = 1000
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_range          = "*"
-      destination_port_range     = "3389"
-      source_address_prefix      = "*"
-      destination_address_prefix = "*"
-    },
-    {
-      name                       = "Allow-HTTP"
-      priority                   = 1010
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_range          = "*"
-      destination_port_range     = "80"
-      source_address_prefix      = "*"
-      destination_address_prefix = "*"
-    },
-    {
-      name                       = "AllowAnyCustom8080Inbound"
-      priority                   = 1070
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_range          = "*"
-      destination_port_range     = "8080"
-      source_address_prefix      = "*"
-      destination_address_prefix = "*"
-    },
-    {
-      name                       = "AllowAnyCustom22Inbound"
-      priority                   = 1080
-      direction                  = "Inbound"
-      access                     = "Allow"
-      protocol                   = "Tcp"
-      source_port_range          = "*"
-      destination_port_range     = "22"
-      source_address_prefix      = "*"
-      destination_address_prefix = "*"
-    }
-  ]
 }
 
 variable "azure_devops_org_url" {
@@ -135,4 +85,25 @@ variable "agent_pool_name" {
 variable "agent_name" {
   type        = string
   description = "Azure DevOps agent name"
+}
+
+variable "subscription_id" {
+  type        = string
+  description = "Azure subscription ID"
+}
+
+variable "client_id" {
+  type        = string
+  description = "Azure service principal client ID"
+}
+
+variable "client_secret" {
+  type        = string
+  description = "Azure service principal client secret"
+  sensitive   = true
+}
+
+variable "tenant_id" {
+  type        = string
+  description = "Azure tenant ID"
 }

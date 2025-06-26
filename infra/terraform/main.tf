@@ -1,5 +1,9 @@
 provider "azurerm" {
   features {}
+  subscription_id = var.subscription_id
+  client_id       = var.client_id
+  client_secret   = var.client_secret
+  tenant_id       = var.tenant_id
 }
 
 resource "azurerm_resource_group" "vm_rg" {
@@ -23,20 +27,27 @@ resource "azurerm_subnet" "vm_subnet" {
 
 resource "azurerm_network_security_group" "vm_nsg" {
   name                = var.nsg_name
-  location            = azurerm_resource_group.vm_rg.location
-  resource_group_name = azurerm_resource_group.vm_rg.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
 
   security_rule = [
     for rule in var.nsg_rules : {
-      name                       = rule.name
-      priority                   = rule.priority
-      direction                  = rule.direction
-      access                     = rule.access
-      protocol                   = rule.protocol
-      source_port_range          = rule.source_port_range
-      destination_port_range     = rule.destination_port_range
-      source_address_prefix      = rule.source_address_prefix
-      destination_address_prefix = rule.destination_address_prefix
+      name                                       = rule.name
+      priority                                   = rule.priority
+      direction                                  = rule.direction
+      access                                     = rule.access
+      protocol                                   = rule.protocol
+      source_port_range                          = rule.source_port_range
+      destination_port_range                     = rule.destination_port_range
+      source_address_prefix                      = rule.source_address_prefix
+      destination_address_prefix                 = rule.destination_address_prefix
+      description                                = rule.description
+      source_port_ranges                         = rule.source_port_ranges
+      destination_port_ranges                    = rule.destination_port_ranges
+      source_address_prefixes                    = rule.source_address_prefixes
+      destination_address_prefixes               = rule.destination_address_prefixes
+      source_application_security_group_ids      = rule.source_application_security_group_ids
+      destination_application_security_group_ids = rule.destination_application_security_group_ids
     }
   ]
 }
