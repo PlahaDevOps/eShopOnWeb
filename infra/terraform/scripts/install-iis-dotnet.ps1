@@ -53,25 +53,29 @@ if (-not $dotnetBundleInstalled) {
     Write-Host ".NET 9 Hosting Bundle already installed."
 }
 
-Write-Host "Step 4: Ensure API subfolder exists in default IIS path"
-$webPath = "C:\inetpub\wwwroot"
-$apiPath = "C:\inetpub\wwwroot\api"
+Write-Host "Step 4: Create custom deploy folders"
+$webPath = "C:\deploy\Web"
+$apiPath = "C:\deploy\PublicApi"
 
-if (-not (Test-Path $webPath)) {
-    New-Item -Path $webPath -ItemType Directory -Force | Out-Null
-    Write-Host "Web folder created."
-} else {
-    Write-Host "Web folder already exists."
+foreach ($path in @($webPath, $apiPath)) {
+    if (-not (Test-Path $path)) {
+        New-Item -Path $path -ItemType Directory -Force | Out-Null
+        Write-Host "Created folder: $path"
+    } else {
+        Write-Host "Folder already exists: $path"
+    }
 }
 
-if (-not (Test-Path $apiPath)) {
-    New-Item -Path $apiPath -ItemType Directory -Force | Out-Null
-    Write-Host "API folder created."
-} else {
-    Write-Host "API folder already exists."
+Write-Host "Step 5: Point IIS to custom Web folder"
+try {
+    Set-ItemProperty 'IIS:\Sites\Default Web Site' -Name physicalPath -Value $webPath
+    Write-Host "IIS site path updated to $webPath"
+} catch {
+    Write-Error "Failed to update IIS site path: $_"
+    exit 1
 }
 
-Write-Host "Step 5: Ensure Default Web Site is started"
+Write-Host "Step 6: Ensure Default Web Site is running"
 $site = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
 if ($site) {
     if ($site.state -ne "Started") {
@@ -85,7 +89,7 @@ if ($site) {
     exit 1
 }
 
-Write-Host "Step 6: Ensuring Windows Firewall rules"
+Write-Host "Step 7: Add Windows Firewall rule for port 80"
 if (-not (Get-NetFirewallRule -DisplayName "Allow HTTP" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "Allow HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
     Write-Host "Firewall rule for port 80 created."
@@ -93,75 +97,40 @@ if (-not (Get-NetFirewallRule -DisplayName "Allow HTTP" -ErrorAction SilentlyCon
     Write-Host "Firewall rule for port 80 already exists."
 }
 
-Write-Host "Step 7: Installing and Configuring Azure Pipelines Agent"
+Write-Host "Step 8: Install and Configure Azure Pipelines Agent"
 $agentPath = "C:\azagent"
 $agentUrl = "https://download.agent.dev.azure.com/agent/4.258.1/vsts-agent-win-x64-4.258.1.zip"
 $agentZip = "$env:TEMP\vsts-agent-win-x64.zip"
 
-# Download agent if not already present
 if (-not (Test-Path $agentZip)) {
-    try {
-        Write-Host "Downloading Azure Pipelines Agent..."
-        Invoke-WebRequest -Uri $agentUrl -OutFile $agentZip -ErrorAction Stop
-        Write-Host "Agent downloaded."
-    } catch {
-        Write-Error "Failed to download Azure Pipelines Agent: $_"
-        exit 1
-    }
+    Write-Host "Downloading Azure Pipelines Agent..."
+    Invoke-WebRequest -Uri $agentUrl -OutFile $agentZip -ErrorAction Stop
+    Write-Host "Agent downloaded."
 }
+Expand-Archive -Path $agentZip -DestinationPath $agentPath -Force
+Write-Host "Agent extracted."
 
-# Extract agent
-try {
-    Expand-Archive -Path $agentZip -DestinationPath $agentPath -Force
-    Write-Host "Agent extracted."
-} catch {
-    Write-Error "Failed to extract Azure Pipelines Agent: $_"
-    exit 1
-}
-
-# Check for config.cmd
-if (-not (Test-Path "$agentPath\\config.cmd")) {
+if (-not (Test-Path "$agentPath\config.cmd")) {
     Write-Error "config.cmd not found in $agentPath. Extraction failed."
     exit 1
 }
 
-# Configure agent
 if (-not $Pat) {
     Write-Error "PAT token is missing! Cannot configure agent."
     exit 1
 }
+
 Write-Host "Configuring Azure Pipelines Agent..."
-$configArgs = @(
-    "--unattended",
-    "--url", $OrgUrl,
-    "--auth", "pat",
-    "--token", $Pat,
-    "--pool", $PoolName,
-    "--agent", $AgentName,
-    "--work", "_work",
-    "--runAsService",
-    "--replace"
-)
 Push-Location $agentPath
-& .\config.cmd @configArgs
-$exitCode = $LASTEXITCODE
+& .\config.cmd --unattended --url $OrgUrl --auth pat --token $Pat --pool $PoolName --agent $AgentName --work _work --runAsService --replace
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Agent config failed with exit code $LASTEXITCODE"
+    exit 1
+}
 Pop-Location
 
-if ($exitCode -ne 0) {
-    Write-Error "Azure Pipelines Agent configuration failed with exit code $exitCode"
-    exit 1
-} else {
-    Write-Host "Agent configured successfully."
-}
-
-# Start the agent service if not running
-$svcCmd = "$agentPath\\svc.cmd"
-if (Test-Path $svcCmd) {
-    & $svcCmd install
-    & $svcCmd start
-    Write-Host "Azure Pipelines Agent service started."
-} else {
-    Write-Host "svc.cmd not found. Please check agent installation."
-}
+& "$agentPath\svc.cmd" install
+& "$agentPath\svc.cmd" start
+Write-Host "Azure Pipelines Agent service started."
 
 Write-Host "✅ Script completed successfully!"
