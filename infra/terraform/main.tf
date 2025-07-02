@@ -70,7 +70,7 @@ resource "azurerm_public_ip" "vm_public_ip" {
   location            = azurerm_resource_group.vm_rg.location
   resource_group_name = azurerm_resource_group.vm_rg.name
   allocation_method   = "Static"
-  sku                 = "Basic"
+  sku                 = "Standard"
 }
 
 resource "azurerm_windows_virtual_machine" "vm" {
@@ -106,7 +106,7 @@ resource "azurerm_virtual_machine_extension" "vm_custom_script" {
 
   settings = <<SETTINGS
     {
-      "fileUris": ["https://raw.githubusercontent.com/PlahaDevOps/eShopOnWeb/feature/terraform-infra/infra/terraform/scripts/install-iis-dotnet.ps1"],
+      "fileUris": ["https://raw.githubusercontent.com/PlahaDevOps/eShopOnWeb/main/infra/terraform/scripts/install-iis-dotnet.ps1"],
       "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1 -OrgUrl '${var.azure_devops_org_url}' -Pat '${var.azure_devops_pat}' -PoolName '${var.agent_pool_name}' -AgentName '${var.agent_name}'"
     }
 SETTINGS

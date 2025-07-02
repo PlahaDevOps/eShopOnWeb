@@ -14,9 +14,10 @@ If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 }
 Write-Host "Step 0: Running as Administrator"
 
-Write-Host "Step 1: Importing IIS module"
+Write-Host "Step 1: Installing IIS and importing IIS module"
+Install-WindowsFeature -Name Web-Server -IncludeManagementTools
 Import-Module WebAdministration
-Write-Host "Step 1: IIS module imported"
+Write-Host "Step 1: IIS installed and module imported"
 
 Write-Host "Step 2: Checking IIS and required sub-features"
 $features = @(
