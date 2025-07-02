@@ -1,7 +1,7 @@
 # install-iis-dotnet.ps1
 
 param(
-    [string]$OrgUrl = "https://dev.azure.com/weworku4/",
+    [string]$OrgUrl = "https://dev.azure.com/learndevops4mes/",
     [string]$Pat,
     [string]$PoolName = "WinServerCorePool",
     [string]$AgentName = "eShopOnWeb-VM"

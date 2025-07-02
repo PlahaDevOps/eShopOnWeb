@@ -1,14 +1,14 @@
-subscription_id = "f7e65cbf-e776-47df-94da-81733337bb5a"
-client_id       = "1501301b-4eb7-4ae4-b01a-e99f38d4832f"
-client_secret   = "WiL8Q~TAEmx9uygbYSh10MDD3l-_.OBuHdftzdBS"
-tenant_id       = "61916599-ada7-4a20-a703-25db27ecc589"
+subscription_id = "9625ea80-f131-4f8e-9bbc-5a43d2a94e08"
+client_id       = "a8a7a05a-f11d-456d-af11-1b405412c85a"
+client_secret   = "cwA8Q~W4LeE5dhqDdfKYy56NFWyv0aGAGSTSLdkS"
+tenant_id       = "bd37e2a3-5723-43b6-92a8-ddfabdadeb3d"
 
-resource_group_name = "MyResourceGroup"
+resource_group_name = "eshop-rg"
 location            = "East US"
-vnet_name           = "WinCoreLabVNET"
-subnet_name         = "WinCoreLabSubnet"
-nsg_name            = "WinCoreLabNSG"
-vm_name             = "WinCoreLab"
+vnet_name           = "eshop-vnet"
+subnet_name         = "eshop-subnet"
+nsg_name            = "eshop-nsg"
+vm_name             = "eshop-vm"
 vm_size             = "Standard_B2ms"
 admin_username      = "azureuser"
 admin_password      = "P@ssw0rd123!"
@@ -87,3 +87,8 @@ nsg_rules = [
     destination_application_security_group_ids = []
   }
 ]
+
+azure_devops_org_url = "https://dev.azure.com/learndevops4mes/"
+azure_devops_pat     = "73nrtmesoFk5eotK9LIriP5RrVdKdtHv0SQsZiw4V07edVR74iorJQQJ99BGACAAAAAAAAAAAAASAZDOHRfu"
+agent_pool_name     = "eshop-agentpool"
+agent_name          = "eshop-agent"
