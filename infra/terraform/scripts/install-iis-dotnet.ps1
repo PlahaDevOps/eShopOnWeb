@@ -7,6 +7,8 @@ param(
     [string]$AgentName = "eShopOnWeb-VM"
 )
 
+Write-Host "DEBUG: OrgUrl is $OrgUrl"
+
 Write-Host "Step 0: Checking for Administrator rights"
 If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Error "You must run this script as an Administrator!"
