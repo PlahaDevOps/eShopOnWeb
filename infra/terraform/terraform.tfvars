@@ -89,6 +89,6 @@ nsg_rules = [
 ]
 
 azure_devops_org_url = "https://dev.azure.com/learndevops4mes/"
-azure_devops_pat     = "1t1hOk5evu6K4o9xAl0yqPCiRAJSR6hF4JCCKz1fyjauIRTHFGvuJQQJ99BGACAAAAAAAAAAAAASAZDO2pdn"
-agent_pool_name     = "eshop-agentpool"
+azure_devops_pat     = "8wMKUUSduuXEC56pSPPkzlZCbGBwpLHt2rIx8hxPXC3RfvynssepJQQJ99BGACAAAAAAAAAAAAASAZDO4IEK"
+agent_pool_name     = "WinServerCorePool"
 agent_name          = "eshop-agent"
