@@ -107,7 +107,7 @@ resource "azurerm_virtual_machine_extension" "vm_custom_script" {
   settings = <<SETTINGS
     {
       "fileUris": ["https://raw.githubusercontent.com/PlahaDevOps/eShopOnWeb/main/infra/terraform/scripts/install-iis-dotnet.ps1"],
-      "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1 -OrgUrl ${var.azure_devops_org_url} -Pat '${var.azure_devops_pat}' -PoolName '${var.agent_pool_name}' -AgentName '${var.agent_name}'"
+      "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1 -OrgUrl \"${var.azure_devops_org_url}\" -Pat \"${var.azure_devops_pat}\" -PoolName \"${var.agent_pool_name}\" -AgentName \"${var.agent_name}\""
     }
 SETTINGS
 }

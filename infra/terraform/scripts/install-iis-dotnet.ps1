@@ -7,6 +7,8 @@ param(
     [string]$AgentName = "eShopOnWeb-VM"
 )
 
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 Write-Host "DEBUG: OrgUrl is $OrgUrl"
 
 Write-Host "Step 0: Checking for Administrator rights"
@@ -49,7 +51,7 @@ if (-not $dotnetBundleInstalled) {
     Write-Host ".NET 9 Hosting Bundle not found. Installing..."
     $dotnetUrl = "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/9.0.6/dotnet-hosting-9.0.6-win.exe"
     $dotnetInstaller = "$env:TEMP\dotnet-hosting-9.0.6-win.exe"
-    Invoke-WebRequest -Uri $dotnetUrl -OutFile $dotnetInstaller
+    Invoke-WebRequest -Uri $dotnetUrl -OutFile $dotnetInstaller -ErrorAction Stop
     Start-Process -FilePath $dotnetInstaller -ArgumentList "/quiet" -Wait
     Write-Host ".NET 9 Hosting Bundle installed."
 } else {
@@ -123,17 +125,21 @@ if (-not $Pat) {
     exit 1
 }
 
-Write-Host "Configuring Azure Pipelines Agent..."
+Write-Host "Configuring Azure Pipelines Agent... (token hidden)"
 Push-Location $agentPath
-& .\config.cmd --unattended --url $OrgUrl --auth pat --token $Pat --pool $PoolName --agent $AgentName --work _work --runAsService --replace
+& .\config.cmd --unattended --url "$OrgUrl" --auth pat --token "$Pat" --pool "$PoolName" --agent "$AgentName" --work _work --runAsService --replace
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Agent config failed with exit code $LASTEXITCODE"
     exit 1
 }
 Pop-Location
 
-& "$agentPath\svc.cmd" install
-& "$agentPath\svc.cmd" start
-Write-Host "Azure Pipelines Agent service started."
+if (-not (Get-Service -Name "vstsagent*" -ErrorAction SilentlyContinue)) {
+    & "$agentPath\svc.cmd" install
+    & "$agentPath\svc.cmd" start
+    Write-Host "Azure Pipelines Agent service installed and started."
+} else {
+    Write-Host "Azure Pipelines Agent service already installed."
+}
 
 Write-Host "✅ Script completed successfully!"
