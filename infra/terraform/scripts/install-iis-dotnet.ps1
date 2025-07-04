@@ -13,17 +13,12 @@ try {
     Install-Module -Name Az -Repository PSGallery -Force -AllowClobber -ErrorAction Stop
     Import-Module Az -ErrorAction Stop
     Write-Host "✅ Azure PowerShell module installed successfully"
-    
-    Write-Host "🔐 Logging into Azure using Managed Identity..."
-    try {
-        Connect-AzAccount -Identity -ErrorAction Stop
-        Write-Host "✅ Successfully authenticated with managed identity"
-    } catch {
-        Write-Host "⚠️  Failed to authenticate with managed identity: $($_.Exception.Message)"
-        Write-Host "⚠️  KeyVault access will not be available"
-    }
+
+    # Try to login
+    Connect-AzAccount -Identity -ErrorAction Stop
+    Write-Host "✅ Successfully authenticated with managed identity"
 } catch {
-    Write-Host "⚠️  Failed to install Azure PowerShell module: $($_.Exception.Message)"
+    Write-Host "⚠️  Failed to install Azure PowerShell module or authenticate: $($_.Exception.Message)"
     Write-Host "⚠️  KeyVault access will not be available"
 }
 
