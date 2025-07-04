@@ -1,196 +1,198 @@
 trigger:
   branches:
     include:
-      - main
-      - feature/*
+    - main
+    - feature/*
 
 pr:
   branches:
     include:
-      - main
+    - main
 
 variables:
-  - name: buildConfiguration
-    value: 'Release'
-  - name: webProject
-    value: 'src/Web/Web.csproj'
-  - name: apiProject
-    value: 'src/PublicApi/PublicApi.csproj'
-  - name: webPublishDir
-    value: '$(Build.ArtifactStagingDirectory)/web'
-  - name: apiPublishDir
-    value: '$(Build.ArtifactStagingDirectory)/api'
+- name: buildConfiguration
+  value: 'Release'
+- name: webProject
+  value: 'src/Web/Web.csproj'
+- name: apiProject
+  value: 'src/PublicApi/PublicApi.csproj'
+- name: webPublishDir
+  value: '$(Build.ArtifactStagingDirectory)/web'
+- name: apiPublishDir
+  value: '$(Build.ArtifactStagingDirectory)/api'
 
 stages:
-  - stage: Build
-    displayName: 'Build, Test & Publish'
-    jobs:
-      - job: Build
-        pool:
-          name: WinServerCorePool
-        steps:
-          - checkout: self
-            clean: true
-            displayName: 'Checkout code'
+- stage: Build
+  displayName: 'Build, Test & Publish'
+  jobs:
+  - job: Build
+    pool:
+      name: WinServerCorePool
+    steps:
+    - checkout: self
+      clean: true
+      displayName: 'Checkout code'
 
-          - task: UseDotNet@2
-            displayName: 'Install .NET 9 SDK'
-            inputs:
-              packageType: sdk
-              version: '9.0.x'
-              installationPath: $(Agent.ToolsDirectory)/dotnet
+    - task: UseDotNet@2
+      displayName: 'Install .NET 9 SDK'
+      inputs:
+        packageType: sdk
+        version: '9.0.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
 
-          - task: CmdLine@2
-            displayName: 'Restore Dependencies'
-            inputs:
-              script: dotnet restore eShopOnWeb.sln
+    - task: CmdLine@2
+      displayName: 'Restore Dependencies'
+      inputs:
+        script: dotnet restore eShopOnWeb.sln
 
-          - task: CmdLine@2
-            displayName: 'Build Solution'
-            inputs:
-              script: dotnet build eShopOnWeb.sln --configuration $(buildConfiguration) --no-restore
+    - task: CmdLine@2
+      displayName: 'Build Solution'
+      inputs:
+        script: dotnet build eShopOnWeb.sln --configuration $(buildConfiguration) --no-restore
 
-          - task: CmdLine@2
-            displayName: 'Run Tests'
-            inputs:
-              script: dotnet test eShopOnWeb.sln --configuration $(buildConfiguration) --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory $(Build.ArtifactStagingDirectory)/TestResults
+    - task: CmdLine@2
+      displayName: 'Run Tests'
+      inputs:
+        script: dotnet test eShopOnWeb.sln --configuration $(buildConfiguration) --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory $(Build.ArtifactStagingDirectory)/TestResults
 
-          - task: CmdLine@2
-            displayName: 'Publish Web Site'
-            inputs:
-              script: |
-                dotnet publish $(webProject) `
-                  --configuration $(buildConfiguration) `
-                  --output $(webPublishDir) `
-                  --no-build `
-                  --runtime win-x64 `
-                  --self-contained false
+    - task: PowerShell@2
+      displayName: 'Publish Web Site'
+      inputs:
+        targetType: 'inline'
+        script: |
+          dotnet publish $(webProject) `
+            --configuration $(buildConfiguration) `
+            --output $(webPublishDir) `
+            --no-build `
+            --runtime win-x64 `
+            --self-contained false
 
-          - task: CmdLine@2
-            displayName: 'Publish Public API'
-            inputs:
-              script: |
-                dotnet publish $(apiProject) `
-                  --configuration $(buildConfiguration) `
-                  --output $(apiPublishDir) `
-                  --no-build `
-                  --runtime win-x64 `
-                  --self-contained false
+    - task: PowerShell@2
+      displayName: 'Publish Public API'
+      inputs:
+        targetType: 'inline'
+        script: |
+          dotnet publish $(apiProject) `
+            --configuration $(buildConfiguration) `
+            --output $(apiPublishDir) `
+            --no-build `
+            --runtime win-x64 `
+            --self-contained false
 
-          - task: PublishPipelineArtifact@1
-            displayName: 'Publish Artifacts'
-            inputs:
-              targetPath: '$(Build.ArtifactStagingDirectory)'
-              artifact: 'drop'
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'drop'
 
-          - task: PublishTestResults@2
-            displayName: 'Publish Test Results'
-            inputs:
-              testResultsFormat: 'VSTest'
-              testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/**/*.trx'
-              mergeTestResults: true
-              testRunTitle: 'eShopOnWeb Tests'
-            condition: succeededOrFailed()
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      inputs:
+        testResultsFormat: 'VSTest'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/TestResults/**/*.trx'
+        mergeTestResults: true
+        testRunTitle: 'eShopOnWeb Tests'
+      condition: succeededOrFailed()
 
-  - stage: Deploy
-    displayName: 'Deploy to IIS on Windows Server Core'
-    dependsOn: Build
-    condition: succeeded()
-    jobs:
-      - job: Deploy
-        pool:
-          name: WinServerCorePool
-        steps:
-          - task: DownloadPipelineArtifact@2
-            displayName: 'Download Artifacts'
-            inputs:
-              artifact: drop
-              path: '$(Pipeline.Workspace)/drop'
+- stage: Deploy
+  displayName: 'Deploy to IIS on Windows Server Core'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: Deploy
+    pool:
+      name: WinServerCorePool
+    steps:
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Artifacts'
+      inputs:
+        artifact: drop
+        path: '$(Pipeline.Workspace)/drop'
 
-          - task: PowerShell@2
-            displayName: 'Take App Offline (Add app_offline.htm)'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $offlineFile = "C:\deploy\Web\app_offline.htm"
-                Set-Content -Path $offlineFile -Value "<html><body><h2>Site is temporarily offline for deployment.</h2></body></html>"
-                Write-Output "✅ App taken offline using app_offline.htm"
+    - task: PowerShell@2
+      displayName: 'Take App Offline (Add app_offline.htm)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $offlineFile = "C:\deploy\Web\app_offline.htm"
+          Set-Content -Path $offlineFile -Value "<html><body><h2>Site is temporarily offline for deployment.</h2></body></html>"
+          Write-Output "✅ App taken offline using app_offline.htm"
 
-          - task: PowerShell@2
-            displayName: 'Copy Web App to deploy folder'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $webTarget = "C:\deploy\Web"
-                if (!(Test-Path $webTarget)) {
-                  New-Item -ItemType Directory -Path $webTarget -Force
-                }
-                Remove-Item "$webTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Copy-Item "$(Pipeline.Workspace)/drop/web/*" $webTarget -Recurse
-                Write-Output "✅ Successfully copied web app to: $webTarget"
+    - task: PowerShell@2
+      displayName: 'Copy Web App to deploy folder'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $webTarget = "C:\deploy\Web"
+          if (!(Test-Path $webTarget)) {
+            New-Item -ItemType Directory -Path $webTarget -Force
+          }
+          Remove-Item "$webTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "$(Pipeline.Workspace)/drop/web/*" $webTarget -Recurse
+          Write-Output "✅ Successfully copied web app to: $webTarget"
 
-          - task: PowerShell@2
-            displayName: 'Copy API to deploy folder'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $apiTarget = "C:\deploy\PublicApi"
-                if (!(Test-Path $apiTarget)) {
-                  New-Item -ItemType Directory -Path $apiTarget -Force
-                }
-                Remove-Item "$apiTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Copy-Item "$(Pipeline.Workspace)/drop/api/*" $apiTarget -Recurse
-                Write-Output "✅ Successfully copied API to: $apiTarget"
+    - task: PowerShell@2
+      displayName: 'Copy API to deploy folder'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $apiTarget = "C:\deploy\PublicApi"
+          if (!(Test-Path $apiTarget)) {
+            New-Item -ItemType Directory -Path $apiTarget -Force
+          }
+          Remove-Item "$apiTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "$(Pipeline.Workspace)/drop/api/*" $apiTarget -Recurse
+          Write-Output "✅ Successfully copied API to: $apiTarget"
 
-          - task: PowerShell@2
-            displayName: 'Bring App Online (Remove app_offline.htm)'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $offlineFile = "C:\deploy\Web\app_offline.htm"
-                if (Test-Path $offlineFile) {
-                  Remove-Item $offlineFile -Force
-                  Write-Output "✅ app_offline.htm removed. Site brought back online"
-                } else {
-                  Write-Warning "⚠️ app_offline.htm not found. Site may already be online"
-                }
+    - task: PowerShell@2
+      displayName: 'Bring App Online (Remove app_offline.htm)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $offlineFile = "C:\deploy\Web\app_offline.htm"
+          if (Test-Path $offlineFile) {
+            Remove-Item $offlineFile -Force
+            Write-Output "✅ app_offline.htm removed. Site brought back online"
+          } else {
+            Write-Warning "⚠️ app_offline.htm not found. Site may already be online"
+          }
 
-          - task: PowerShell@2
-            displayName: 'Restart IIS'
-            continueOnError: true
-            inputs:
-              targetType: 'inline'
-              script: |
-                $service = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
-                if ($service) {
-                  Restart-Service -Name 'W3SVC' -Force
-                  Write-Output "✅ IIS restarted successfully"
-                } else {
-                  Write-Warning "⚠️ W3SVC service not found. Skipping IIS restart."
-                }
+    - task: PowerShell@2
+      displayName: 'Restart IIS'
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: |
+          $service = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
+          if ($service) {
+              Restart-Service -Name 'W3SVC' -Force
+              Write-Output "✅ IIS restarted successfully"
+          } else {
+              Write-Warning "⚠️ W3SVC service not found. Skipping IIS restart."
+          }
 
-          - task: PowerShell@2
-            displayName: 'Verify Deployment'
-            inputs:
-              targetType: 'inline'
-              script: |
-                Write-Output "=== Deployment Verification ==="
+    - task: PowerShell@2
+      displayName: 'Verify Deployment'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Output "=== Deployment Verification ==="
 
-                $webTarget = "C:\deploy\Web"
-                $apiTarget = "C:\deploy\PublicApi"
+          $webTarget = "C:\deploy\Web"
+          $apiTarget = "C:\deploy\PublicApi"
 
-                if (Test-Path $webTarget) {
-                  $webFiles = Get-ChildItem $webTarget -Recurse | Measure-Object
-                  Write-Output "✅ Web app deployed: $($webFiles.Count) files in $webTarget"
-                } else {
-                  Write-Warning "⚠️ Web app directory not found: $webTarget"
-                }
+          if (Test-Path $webTarget) {
+            $webFiles = Get-ChildItem $webTarget -Recurse | Measure-Object
+            Write-Output "✅ Web app deployed: $($webFiles.Count) files in $webTarget"
+          } else {
+            Write-Warning "⚠️ Web app directory not found: $webTarget"
+          }
 
-                if (Test-Path $apiTarget) {
-                  $apiFiles = Get-ChildItem $apiTarget -Recurse | Measure-Object
-                  Write-Output "✅ API deployed: $($apiFiles.Count) files in $apiTarget"
-                } else {
-                  Write-Warning "⚠️ API directory not found: $apiTarget"
-                }
+          if (Test-Path $apiTarget) {
+            $apiFiles = Get-ChildItem $apiTarget -Recurse | Measure-Object
+            Write-Output "✅ API deployed: $($apiFiles.Count) files in $apiTarget"
+          } else {
+            Write-Warning "⚠️ API directory not found: $apiTarget"
+          }
 
-                Write-Output "=== ✅ Deployment Complete ==="
+          Write-Output "=== ✅ Deployment Complete ==="
