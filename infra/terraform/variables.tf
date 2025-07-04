@@ -71,12 +71,6 @@ variable "azure_devops_org_url" {
   description = "Azure DevOps organization URL"
 }
 
-variable "azure_devops_pat" {
-  type        = string
-  description = "Azure DevOps Personal Access Token"
-  sensitive   = true
-}
-
 variable "agent_pool_name" {
   type        = string
   description = "Azure DevOps agent pool name"
@@ -85,6 +79,21 @@ variable "agent_pool_name" {
 variable "agent_name" {
   type        = string
   description = "Azure DevOps agent name"
+}
+
+variable "keyvault_name" {
+  type        = string
+  description = "Azure Key Vault name storing the Azure DevOps PAT"
+}
+
+variable "keyvault_secret_name" {
+  type        = string
+  description = "Secret name in Key Vault that stores the Azure DevOps PAT"
+}
+
+variable "keyvault_resource_group_name" {
+  type        = string
+  description = "Resource group name where the Key Vault is located"
 }
 
 variable "subscription_id" {
