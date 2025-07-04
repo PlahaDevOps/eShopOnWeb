@@ -141,4 +141,11 @@ if ($PatValue) {
     Write-Host "⚠️  Skipping Azure DevOps Agent install — no PAT retrieved"
 }
 
+Write-Host "Step X: Installing .NET 9 SDK"
+$sdkUrl = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.301/dotnet-sdk-9.0.301-win-x64.exe"
+$sdkInstaller = "$env:TEMP\\dotnet-sdk-9.0.301-win-x64.exe"
+Invoke-WebRequest -Uri $sdkUrl -OutFile $sdkInstaller
+Start-Process -FilePath $sdkInstaller -ArgumentList "/quiet" -Wait
+Write-Host "✅ .NET 9 SDK installed"
+
 Write-Host "✅ Script completed!"

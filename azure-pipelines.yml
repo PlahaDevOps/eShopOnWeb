@@ -55,29 +55,19 @@ stages:
       inputs:
         script: dotnet test eShopOnWeb.sln --configuration $(buildConfiguration) --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory $(Build.ArtifactStagingDirectory)/TestResults
 
-    - task: PowerShell@2
+    - task: DotNetCoreCLI@2
       displayName: 'Publish Web Site'
       inputs:
-        targetType: 'inline'
-        script: |
-          dotnet publish $(webProject) `
-            --configuration $(buildConfiguration) `
-            --output $(webPublishDir) `
-            --no-build `
-            --runtime win-x64 `
-            --self-contained false
+        command: 'publish'
+        projects: '$(webProject)'
+        arguments: '--configuration $(buildConfiguration) --output $(webPublishDir) --no-build --runtime win-x64 --self-contained false'
 
-    - task: PowerShell@2
+    - task: DotNetCoreCLI@2
       displayName: 'Publish Public API'
       inputs:
-        targetType: 'inline'
-        script: |
-          dotnet publish $(apiProject) `
-            --configuration $(buildConfiguration) `
-            --output $(apiPublishDir) `
-            --no-build `
-            --runtime win-x64 `
-            --self-contained false
+        command: 'publish'
+        projects: '$(apiProject)'
+        arguments: '--configuration $(buildConfiguration) --output $(apiPublishDir) --no-build --runtime win-x64 --self-contained false'
 
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Artifacts'
