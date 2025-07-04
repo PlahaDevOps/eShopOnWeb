@@ -4,7 +4,6 @@ trigger:
     - main
     - feature/*
 
-# Optional: Add pull request validation
 pr:
   branches:
     include:
@@ -83,8 +82,7 @@ stages:
 
 - stage: Deploy
   displayName: 'Deploy to IIS on Windows Server Core'
-  dependsOn:
-  - Build
+  dependsOn: Build
   condition: succeeded()
   jobs:
   - job: Deploy
@@ -97,20 +95,17 @@ stages:
         artifact: drop
         path: '$(Pipeline.Workspace)/drop'
 
-    # 🛑 STOP IIS BEFORE DEPLOYING
+    # ✅ Step 1: Take App Offline
     - task: PowerShell@2
-      displayName: 'Stop IIS Before Deployment'
+      displayName: 'Take App Offline (Add app_offline.htm)'
       inputs:
         targetType: 'inline'
         script: |
-          $service = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
-          if ($service -and $service.Status -eq 'Running') {
-              Stop-Service -Name 'W3SVC' -Force
-              Write-Output "✅ IIS stopped to release file locks"
-          } else {
-              Write-Output "⚠️ W3SVC not found or already stopped"
-          }
+          $offlineFile = "C:\deploy\Web\app_offline.htm"
+          Set-Content -Path $offlineFile -Value "<html><body><h2>Site is temporarily offline for deployment.</h2></body></html>"
+          Write-Output "✅ App taken offline using app_offline.htm"
 
+    # ✅ Step 2: Copy Web App
     - task: PowerShell@2
       displayName: 'Copy Web App to deploy folder'
       inputs:
@@ -124,6 +119,7 @@ stages:
           Copy-Item "$(Pipeline.Workspace)/drop/web/*" $webTarget -Recurse
           Write-Output "✅ Successfully copied web app to: $webTarget"
 
+    # ✅ Step 3: Copy API
     - task: PowerShell@2
       displayName: 'Copy API to deploy folder'
       inputs:
@@ -137,6 +133,21 @@ stages:
           Copy-Item "$(Pipeline.Workspace)/drop/api/*" $apiTarget -Recurse
           Write-Output "✅ Successfully copied API to: $apiTarget"
 
+    # ✅ Step 4: Bring App Online
+    - task: PowerShell@2
+      displayName: 'Bring App Online (Remove app_offline.htm)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $offlineFile = "C:\deploy\Web\app_offline.htm"
+          if (Test-Path $offlineFile) {
+            Remove-Item $offlineFile -Force
+            Write-Output "✅ app_offline.htm removed. Site brought back online"
+          } else {
+            Write-Warning "⚠️ app_offline.htm not found. Site may already be online"
+          }
+
+    # 🔄 Optional: Restart IIS (if needed)
     - task: PowerShell@2
       displayName: 'Restart IIS'
       continueOnError: true
@@ -151,6 +162,7 @@ stages:
               Write-Warning "⚠️ W3SVC service not found. Skipping IIS restart."
           }
 
+    # 🔍 Final Check
     - task: PowerShell@2
       displayName: 'Verify Deployment'
       inputs:
