@@ -96,3 +96,4 @@ agent_name            = "eshop-agent"
 keyvault_name         = "my-pat-vault"
 keyvault_secret_name  = "AzureDevOpsPAT"
 keyvault_resource_group_name = "my-pat-vault-rg"
+create_keyvault_access_policy = false

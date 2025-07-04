@@ -109,14 +109,12 @@ resource "azurerm_virtual_machine_extension" "vm_custom_script" {
   type                 = "CustomScriptExtension"
   type_handler_version = "1.10"
 
-  settings = <<SETTINGS
-    {
-      "fileUris": [
-        "https://raw.githubusercontent.com/PlahaDevOps/eShopOnWeb/main/infra/terraform/scripts/install-iis-dotnet.ps1"
-      ],
-      "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1 -OrgUrl \\"${var.azure_devops_org_url}\\" -KeyVaultName \\"${var.keyvault_name}\\" -KeyVaultSecretName \\"${var.keyvault_secret_name}\\" -PoolName \\"${var.agent_pool_name}\\" -AgentName \\"${var.agent_name}\\""
-    }
-SETTINGS
+  settings = jsonencode({
+    fileUris = [
+      "https://raw.githubusercontent.com/PlahaDevOps/eShopOnWeb/main/infra/terraform/scripts/install-iis-dotnet.ps1"
+    ]
+    commandToExecute = "powershell.exe -ExecutionPolicy Unrestricted -File install-iis-dotnet.ps1 -OrgUrl \"${var.azure_devops_org_url}\" -KeyVaultName \"${var.keyvault_name}\" -KeyVaultSecretName \"${var.keyvault_secret_name}\" -PoolName \"${var.agent_pool_name}\" -AgentName \"${var.agent_name}\""
+  })
 }
 
 resource "azurerm_network_interface_security_group_association" "vm_nic_nsg" {
@@ -126,12 +124,14 @@ resource "azurerm_network_interface_security_group_association" "vm_nic_nsg" {
 
 # Grant VM's managed identity access to Key Vault
 data "azurerm_key_vault" "existing" {
+  count               = var.create_keyvault_access_policy ? 1 : 0
   name                = var.keyvault_name
   resource_group_name = var.keyvault_resource_group_name
 }
 
 resource "azurerm_key_vault_access_policy" "vm_identity" {
-  key_vault_id = data.azurerm_key_vault.existing.id
+  count        = var.create_keyvault_access_policy ? 1 : 0
+  key_vault_id = data.azurerm_key_vault.existing[0].id
   tenant_id    = data.azurerm_client_config.current.tenant_id
   object_id    = azurerm_windows_virtual_machine.vm.identity[0].principal_id
 

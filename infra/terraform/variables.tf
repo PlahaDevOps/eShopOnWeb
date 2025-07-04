@@ -96,6 +96,12 @@ variable "keyvault_resource_group_name" {
   description = "Resource group name where the Key Vault is located"
 }
 
+variable "create_keyvault_access_policy" {
+  type        = bool
+  description = "Whether to create KeyVault access policy for VM managed identity"
+  default     = false
+}
+
 variable "subscription_id" {
   type        = string
   description = "Azure subscription ID"
