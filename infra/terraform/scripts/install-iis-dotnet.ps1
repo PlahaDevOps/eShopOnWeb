@@ -1,50 +1,58 @@
-# install-iis-dotnet.ps1
-
 param(
     [string]$OrgUrl = "https://dev.azure.com/learndevops4mes/",
     [string]$KeyVaultName = "my-pat-vault",
     [string]$KeyVaultSecretName = "AzureDevOpsPAT",
     [string]$PoolName = "WinServerCorePool",
-    [string]$AgentName = "eShopOnWeb-VM"
+    [string]$AgentName = "eshop-agent"
 )
 
-Write-Host "🔐 Attempting to install Azure PowerShell module for KeyVault access..."
-try {
-    Install-Module -Name Az -Repository PSGallery -Force -AllowClobber -ErrorAction Stop
-    Import-Module Az -ErrorAction Stop
-    Write-Host "✅ Azure PowerShell module installed successfully"
+$ErrorActionPreference = "Stop"
 
-    # Try to login
-    Connect-AzAccount -Identity -ErrorAction Stop
-    Write-Host "✅ Successfully authenticated with managed identity"
+Write-Host "🔐 Installing Azure PowerShell module..."
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Install-Module -Name Az -Repository PSGallery -Force -AllowClobber
+    Import-Module Az
+    Write-Host "✅ Azure PowerShell module installed"
 } catch {
-    Write-Host "⚠️  Failed to install Azure PowerShell module or authenticate: $($_.Exception.Message)"
-    Write-Host "⚠️  KeyVault access will not be available"
+    Write-Host "❌ Failed to install Az module: $($_.Exception.Message)"
 }
 
-Write-Host "🔐 Attempting to fetch PAT from Azure Key Vault '$KeyVaultName'..."
+Write-Host "🔐 Authenticating with managed identity..."
+$connected = $false
+try {
+    Connect-AzAccount -Identity
+    $connected = $true
+    Write-Host "✅ Connected to Azure with managed identity"
+} catch {
+    Write-Host "❌ Connect-AzAccount -Identity failed: $($_.Exception.Message)"
+}
+
 $PatValue = $null
-try {
-    $Pat = Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name $KeyVaultSecretName -ErrorAction Stop
-    if ($Pat) {
-        $PatValue = $Pat.SecretValue | ConvertFrom-SecureString -AsPlainText
-        Write-Host "✅ PAT successfully retrieved from Key Vault"
-    } else {
-        Write-Host "⚠️  PAT not found in Key Vault - will skip Azure DevOps agent configuration"
+if ($connected) {
+    Write-Host "🔍 Fetching PAT from Key Vault '$KeyVaultName'..."
+    try {
+        $Pat = Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name $KeyVaultSecretName
+        if ($Pat -ne $null) {
+            $PatValue = $Pat.SecretValue | ConvertFrom-SecureString -AsPlainText
+            Write-Host "✅ PAT successfully retrieved"
+        } else {
+            Write-Host "⚠️ PAT secret was null"
+        }
+    } catch {
+        Write-Host "❌ Failed to get PAT from Key Vault: $($_.Exception.Message)"
     }
-} catch {
-    Write-Host "⚠️  Could not retrieve PAT from Key Vault: $($_.Exception.Message)"
-    Write-Host "⚠️  This is expected if Key Vault doesn't exist yet or VM doesn't have access"
-    Write-Host "⚠️  Azure DevOps agent configuration will be skipped"
+} else {
+    Write-Host "⚠️ Skipping PAT retrieval — not authenticated"
 }
 
-Write-Host "Step 0: Checking for Administrator rights"
+Write-Host "🔧 Checking for administrator rights..."
 If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Error "You must run this script as an Administrator!"
+    Write-Error "You must run this script as Administrator!"
     exit 1
 }
 
-Write-Host "Step 1: Installing IIS and importing IIS module"
+Write-Host "🌐 Installing IIS and features..."
 Install-WindowsFeature -Name Web-Server -IncludeManagementTools
 Import-Module WebAdministration
 
@@ -62,13 +70,18 @@ foreach ($feature in $features) {
     }
 }
 
-Write-Host "Step 2: Installing .NET 9 Hosting Bundle"
-$dotnetUrl = "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/9.0.6/dotnet-hosting-9.0.6-win.exe"
+Write-Host "🧱 Installing .NET 9 Hosting Bundle..."
+$dotnetUrl = "https://download.agent.dev.azure.com/agent/4.258.1/vsts-agent-win-x64-4.258.1.zip"
 $installerPath = "$env:TEMP\dotnet-hosting-9.0.6-win.exe"
-Invoke-WebRequest -Uri $dotnetUrl -OutFile $installerPath
-Start-Process -FilePath $installerPath -ArgumentList "/quiet" -Wait
+try {
+    Invoke-WebRequest -Uri "https://builds.dot.net/artifacts/aspnetcore/Runtime/9.0.6/dotnet-hosting-9.0.6-win.exe" -OutFile $installerPath
+    Start-Process -FilePath $installerPath -ArgumentList "/quiet" -Wait
+    Write-Host "✅ .NET Hosting Bundle installed"
+} catch {
+    Write-Host "❌ Failed to install .NET Hosting Bundle: $($_.Exception.Message)"
+}
 
-Write-Host "Step 3: Creating deploy folders"
+Write-Host "📁 Creating deployment folders..."
 $webPath = "C:\deploy\Web"
 $apiPath = "C:\deploy\PublicApi"
 foreach ($path in @($webPath, $apiPath)) {
@@ -77,73 +90,55 @@ foreach ($path in @($webPath, $apiPath)) {
     }
 }
 
-Write-Host "Step 4: Configuring IIS"
-
-# Wait for IIS:\Sites\Default Web Site to be available
+Write-Host "🌐 Configuring IIS..."
 $maxRetries = 10
 $retry = 0
 while ($retry -lt $maxRetries) {
     try {
-        if (Test-Path 'IIS:\Sites\Default Web Site') {
-            break
-        }
+        if (Test-Path 'IIS:\Sites\Default Web Site') { break }
     } catch {}
     Start-Sleep -Seconds 5
     $retry++
 }
 if (-not (Test-Path 'IIS:\Sites\Default Web Site')) {
-    Write-Error "IIS Default Web Site not available after waiting."
+    Write-Error "❌ IIS Default Web Site not available"
     exit 1
 }
 
 Set-ItemProperty 'IIS:\Sites\Default Web Site' -Name physicalPath -Value $webPath
-$site = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
-if ($site -and $site.state -ne "Started") {
+$site = Get-Website -Name "Default Web Site"
+if ($site.state -ne "Started") {
     Start-Website -Name "Default Web Site"
 }
 
-Write-Host "Step 5: Adding firewall rule for HTTP"
+Write-Host "🛡️ Adding HTTP firewall rule..."
 if (-not (Get-NetFirewallRule -DisplayName "Allow HTTP" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "Allow HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
 }
 
-# Only configure Azure DevOps agent if we have a PAT
 if ($PatValue) {
-    Write-Host "Step 6: Installing Azure DevOps Agent"
+    Write-Host "🤖 Installing Azure DevOps Agent..."
     $agentPath = "C:\azagent"
-    $agentUrl = "https://download.agent.dev.azure.com/agent/4.258.1/vsts-agent-win-x64-4.258.1.zip"
-    $agentZip = "$env:TEMP\vsts-agent-win-x64.zip"
+    $agentZip = "$env:TEMP\vsts-agent.zip"
 
-    if (-not (Test-Path $agentZip)) {
-        Invoke-WebRequest -Uri $agentUrl -OutFile $agentZip -ErrorAction Stop
-    }
+    Remove-Item -Recurse -Force $agentPath -ErrorAction SilentlyContinue
+    Remove-Item -Force $agentZip -ErrorAction SilentlyContinue
+
+    Invoke-WebRequest -Uri "https://download.agent.dev.azure.com/agent/4.258.1/vsts-agent-win-x64-4.258.1.zip" -OutFile $agentZip
     Expand-Archive -Path $agentZip -DestinationPath $agentPath -Force
 
-    if (-not (Test-Path "$agentPath\config.cmd")) {
-        Write-Error "config.cmd not found. Agent extraction failed."
-        exit 1
-    }
-
-    Write-Host "Configuring Azure DevOps Agent..."
-    Write-Host "DEBUG: OrgUrl is $OrgUrl"
-    Write-Host "DEBUG: PoolName is $PoolName"
-    Write-Host "DEBUG: AgentName is $AgentName"
-    Write-Host "DEBUG: PAT length is $($PatValue.Length) characters"
-
     Push-Location $agentPath
-    & .\config.cmd --unattended --url $OrgUrl --auth pat --token $PatValue --pool $PoolName --agent $AgentName --work _work --runAsService --replace
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Agent config failed with exit code $LASTEXITCODE"
-        exit 1
+    .\config.cmd --unattended --url $OrgUrl --auth pat --token $PatValue --pool $PoolName --agent $AgentName --work _work --runAsService --replace
+    if (Test-Path "$agentPath\svc.cmd") {
+        .\svc.cmd install
+        .\svc.cmd start
+        Write-Host "✅ Azure DevOps Agent installed and started"
+    } else {
+        Write-Error "❌ svc.cmd missing — agent config may have failed"
     }
     Pop-Location
-
-    & "$agentPath\svc.cmd" install
-    & "$agentPath\svc.cmd" start
-    Write-Host "✅ Azure DevOps Agent installed and configured successfully"
 } else {
-    Write-Host "⚠️  Skipping Azure DevOps Agent installation - no PAT available"
-    Write-Host "⚠️  You can manually configure the agent later when KeyVault is available"
+    Write-Host "⚠️  Skipping Azure DevOps Agent install — no PAT retrieved"
 }
 
-Write-Host "✅ Script completed successfully!"
+Write-Host "✅ Script completed!"
