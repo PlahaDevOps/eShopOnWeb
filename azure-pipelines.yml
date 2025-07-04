@@ -97,6 +97,20 @@ stages:
         artifact: drop
         path: '$(Pipeline.Workspace)/drop'
 
+    # 🛑 STOP IIS BEFORE DEPLOYING
+    - task: PowerShell@2
+      displayName: 'Stop IIS Before Deployment'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $service = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
+          if ($service -and $service.Status -eq 'Running') {
+              Stop-Service -Name 'W3SVC' -Force
+              Write-Output "✅ IIS stopped to release file locks"
+          } else {
+              Write-Output "⚠️ W3SVC not found or already stopped"
+          }
+
     - task: PowerShell@2
       displayName: 'Copy Web App to deploy folder'
       inputs:
@@ -108,7 +122,7 @@ stages:
           }
           Remove-Item "$webTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
           Copy-Item "$(Pipeline.Workspace)/drop/web/*" $webTarget -Recurse
-          Write-Output "Successfully copied web app to: $webTarget"
+          Write-Output "✅ Successfully copied web app to: $webTarget"
 
     - task: PowerShell@2
       displayName: 'Copy API to deploy folder'
@@ -121,7 +135,7 @@ stages:
           }
           Remove-Item "$apiTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
           Copy-Item "$(Pipeline.Workspace)/drop/api/*" $apiTarget -Recurse
-          Write-Output "Successfully copied API to: $apiTarget"
+          Write-Output "✅ Successfully copied API to: $apiTarget"
 
     - task: PowerShell@2
       displayName: 'Restart IIS'
@@ -132,9 +146,9 @@ stages:
           $service = Get-Service -Name 'W3SVC' -ErrorAction SilentlyContinue
           if ($service) {
               Restart-Service -Name 'W3SVC' -Force
-              Write-Output "IIS restarted successfully"
+              Write-Output "✅ IIS restarted successfully"
           } else {
-              Write-Warning "W3SVC service not found. Skipping IIS restart."
+              Write-Warning "⚠️ W3SVC service not found. Skipping IIS restart."
           }
 
     - task: PowerShell@2
@@ -149,16 +163,16 @@ stages:
 
           if (Test-Path $webTarget) {
             $webFiles = Get-ChildItem $webTarget -Recurse | Measure-Object
-            Write-Output "Web app deployed: $($webFiles.Count) files in $webTarget"
+            Write-Output "✅ Web app deployed: $($webFiles.Count) files in $webTarget"
           } else {
-            Write-Warning "Web app directory not found: $webTarget"
+            Write-Warning "⚠️ Web app directory not found: $webTarget"
           }
 
           if (Test-Path $apiTarget) {
             $apiFiles = Get-ChildItem $apiTarget -Recurse | Measure-Object
-            Write-Output "API deployed: $($apiFiles.Count) files in $apiTarget"
+            Write-Output "✅ API deployed: $($apiFiles.Count) files in $apiTarget"
           } else {
-            Write-Warning "API directory not found: $apiTarget"
+            Write-Warning "⚠️ API directory not found: $apiTarget"
           }
 
-          Write-Output "=== Deployment Complete ==="
+          Write-Output "=== ✅ Deployment Complete ==="
