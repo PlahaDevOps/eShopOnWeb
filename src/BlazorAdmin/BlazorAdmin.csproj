@@ -1,4 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">	
+	<PropertyGroup>
+		<BlazorWebAssemblyEnableLinking>false</BlazorWebAssemblyEnableLinking>
+		<UseBlazorWebAssembly>true</UseBlazorWebAssembly>
+	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />
 		<PackageReference Include="BlazorInputFile" />
