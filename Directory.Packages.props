@@ -92,7 +92,6 @@
     <PackageVersion Include="MSTest.TestAdapter" Version="3.9.2" />
     <PackageVersion Include="MSTest.TestFramework" Version="3.9.2" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <!-- Mono Runtime for Blazor WebAssembly -->
-    <PackageVersion Include="Microsoft.NETCore.App.Runtime.Mono.browser-wasm" Version="9.0.0-preview.7.24405.7" />
+
   </ItemGroup>
 </Project>

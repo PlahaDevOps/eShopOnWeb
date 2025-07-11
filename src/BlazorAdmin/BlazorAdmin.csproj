@@ -16,7 +16,6 @@
 		<PackageReference Include="Microsoft.Extensions.Identity.Stores" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
 				<PackageReference Include="System.Net.Http.Json" />
-		<PackageReference Include="Microsoft.NETCore.App.Runtime.Mono.browser-wasm" />
 	</ItemGroup>
 
 	<ItemGroup>
