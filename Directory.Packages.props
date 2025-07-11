@@ -1,7 +1,6 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <TargetFramework>net9.0</TargetFramework>
     <!--<AspNetVersion>8.0.8</AspNetVersion>
     <SystemExtensionVersion>8.0.0</SystemExtensionVersion>
     <EntityFramworkCoreVersion>8.0.10</EntityFramworkCoreVersion>
@@ -25,24 +24,24 @@
     <PackageVersion Include="FastEndpoints.Swagger" Version="6.1.0" />
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
     <PackageVersion Include="MediatR" Version="12.4.1" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.6" PrivateAssets="all" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Identity.UI" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.7" PrivateAssets="all" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.UI" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Stores" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.7" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc" Version="2.2.0" />
-    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Configuration" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Configuration" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="9.0.7" />
     <PackageVersion Include="Microsoft.Web.LibraryManager.Build" Version="3.0.71" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.1">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.7">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageVersion>
@@ -56,14 +55,14 @@
     <PackageVersion Include="System.Diagnostics.Tracing" Version="4.3.0" />
     <PackageVersion Include="System.IO.FileSystem" Version="4.3.0" />
     <PackageVersion Include="System.IO.FileSystem.Primitives" Version="4.3.0" />
-    <PackageVersion Include="System.Net.Http.Json" Version="9.0.6" />
+    <PackageVersion Include="System.Net.Http.Json" Version="9.0.7" />
     <PackageVersion Include="System.Net.Primitives" Version="4.3.0" />
     <PackageVersion Include="System.Security.Claims" Version="4.3.0" />
     <PackageVersion Include="System.Runtime.Handles" Version="4.3.0" />
     <PackageVersion Include="System.Runtime.InteropServices" Version="4.3.0" />
     <PackageVersion Include="System.Text.Encoding" Version="4.3.0" />
     <PackageVersion Include="System.Text.Encoding.Extensions" Version="4.3.0" />
-    <PackageVersion Include="System.Text.Json" Version="9.0.6" />
+    <PackageVersion Include="System.Text.Json" Version="9.0.7" />
     <PackageVersion Include="System.Threading" Version="4.3.0" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0" />
     <!-- Aspire -->
@@ -79,7 +78,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.12.0-beta.1" />
     <!-- Test -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.7" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit.v3" Version="2.0.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.1">
