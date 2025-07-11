@@ -3,6 +3,7 @@
 		<BlazorWebAssemblyEnableLinking>false</BlazorWebAssemblyEnableLinking>
 		<UseBlazorWebAssembly>true</UseBlazorWebAssembly>
 		<BlazorWebAssemblyEnableCompression>false</BlazorWebAssemblyEnableCompression>
+		<BlazorWebAssemblyRuntimeVersion>9.0.6</BlazorWebAssemblyRuntimeVersion>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />
@@ -16,6 +17,7 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
 		<PackageReference Include="System.Net.Http.Json" />
 		<PackageReference Include="Microsoft.NETCore.App.Runtime.Mono.browser-wasm" Version="9.0.6" />
+		<PackageReference Include="Microsoft.NETCore.App.Runtime.Mono.win-x64" Version="9.0.6" />
 	</ItemGroup>
 
 	<ItemGroup>
