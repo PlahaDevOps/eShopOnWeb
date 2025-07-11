@@ -1,10 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">	
-	<PropertyGroup>
-		<BlazorWebAssemblyEnableLinking>false</BlazorWebAssemblyEnableLinking>
-		<UseBlazorWebAssembly>true</UseBlazorWebAssembly>
-		<BlazorWebAssemblyEnableCompression>false</BlazorWebAssemblyEnableCompression>
-		<BlazorWebAssemblyRuntimeVersion>9.0.6</BlazorWebAssemblyRuntimeVersion>
-	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />
 		<PackageReference Include="BlazorInputFile" />
@@ -15,7 +9,7 @@
 		<PackageReference Include="Microsoft.Extensions.Identity.Core" />
 		<PackageReference Include="Microsoft.Extensions.Identity.Stores" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
-				<PackageReference Include="System.Net.Http.Json" />
+		<PackageReference Include="System.Net.Http.Json" />
 	</ItemGroup>
 
 	<ItemGroup>

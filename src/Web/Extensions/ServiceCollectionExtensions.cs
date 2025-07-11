@@ -1,9 +1,7 @@
 ﻿using Azure.Identity;
-#if !RELEASE
 using BlazorAdmin;
 using BlazorAdmin.Services;
 using Blazored.LocalStorage;
-#endif
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.DotNet.Scaffolding.Shared;
 using Microsoft.EntityFrameworkCore;
@@ -64,7 +62,6 @@ public static class ServiceCollectionExtensions
             .AddCheck<HomePageHealthCheck>("home_page_health_check", tags: new[] { "homePageHealthCheck" });
     }
 
-#if !RELEASE
     public static void AddBlazor(this IServiceCollection services, ConfigurationManager configuration)
     {
         var configSection = configuration.GetRequiredSection(BaseUrlConfiguration.CONFIG_NAME);
@@ -83,5 +80,4 @@ public static class ServiceCollectionExtensions
         services.AddScoped<HttpService>();
         services.AddBlazorServices();
     }
-#endif
 }

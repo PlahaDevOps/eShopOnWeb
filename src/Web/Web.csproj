@@ -6,7 +6,6 @@
     <RootNamespace>Microsoft.eShopWeb.Web</RootNamespace>
     <UserSecretsId>aspnet-Web2-1FA3F72E-E7E3-4360-9E49-1CCCD7FE85F7</UserSecretsId>
     <LangVersion>latest</LangVersion>
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
@@ -54,11 +53,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ApplicationCore\ApplicationCore.csproj" />
+    <ProjectReference Include="..\BlazorAdmin\BlazorAdmin.csproj" />
     <ProjectReference Include="..\eShopWeb.AspireServiceDefaults\eShopWeb.AspireServiceDefaults.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(Configuration)' != 'Release'">
-    <ProjectReference Include="..\BlazorAdmin\BlazorAdmin.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="compilerconfig.json" />
