@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿#if !RELEASE
+using System.Security.Claims;
 using BlazorAdmin.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -15,6 +16,7 @@ namespace Microsoft.eShopWeb.Web.Controllers;
 [Route("[controller]")]
 [ApiController]
 public class UserController : ControllerBase
+#endif
 {
     private readonly ITokenClaimsService _tokenClaimsService;
     private readonly SignInManager<ApplicationUser> _signInManager;
@@ -57,14 +59,27 @@ public class UserController : ControllerBase
         return Ok();
     }
 
+#if !RELEASE
     private async Task<UserInfo> CreateUserInfo(ClaimsPrincipal claimsPrincipal)
+#else
+    private async Task<object> CreateUserInfo(ClaimsPrincipal claimsPrincipal)
+#endif
     {
+#if !RELEASE
         if (claimsPrincipal.Identity == null || claimsPrincipal.Identity.Name == null || !claimsPrincipal.Identity.IsAuthenticated)
         {
             return UserInfo.Anonymous;
         }
 
         var userInfo = new UserInfo
+#else
+        if (claimsPrincipal.Identity == null || claimsPrincipal.Identity.Name == null || !claimsPrincipal.Identity.IsAuthenticated)
+        {
+            return new { IsAuthenticated = false };
+        }
+
+        var userInfo = new
+#endif
         {
             IsAuthenticated = true
         };
