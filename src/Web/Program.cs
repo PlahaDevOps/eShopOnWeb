@@ -1,6 +1,6 @@
 ﻿using System.Net.Mime;
 using Ardalis.ListStartupServices;
-using Azure.Identity;
+// using Azure.Identity; // Removed for IIS deployment
 using BlazorAdmin;
 using BlazorAdmin.Services;
 using Blazored.LocalStorage;
@@ -22,25 +22,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddConsole();
 
-if (builder.Environment.IsDevelopment() || builder.Environment.EnvironmentName == "Docker"){
-    // Configure SQL Server (local)
-    Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
-}
-else{
-    // Configure SQL Server (prod)
-    var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
-    builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"] ?? ""), credential);
-    builder.Services.AddDbContext<CatalogContext>(c =>
-    {
-        var connectionString = builder.Configuration[builder.Configuration["AZURE_SQL_CATALOG_CONNECTION_STRING_KEY"] ?? ""];
-        c.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
-    });
-    builder.Services.AddDbContext<AppIdentityDbContext>(options =>
-    {
-        var connectionString = builder.Configuration[builder.Configuration["AZURE_SQL_IDENTITY_CONNECTION_STRING_KEY"] ?? ""];
-        options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
-    });
-}
+// Configure SQL Server (use appsettings.json connection strings for both dev and prod)
+Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
 
 builder.Services.AddCookieSettings();
 
@@ -98,11 +81,21 @@ var configSection = builder.Configuration.GetRequiredSection(BaseUrlConfiguratio
 builder.Services.Configure<BaseUrlConfiguration>(configSection);
 var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 
-// Blazor Admin Required Services for Prerendering
-builder.Services.AddScoped<HttpClient>(s => new HttpClient
+if (string.IsNullOrWhiteSpace(baseUrlConfig?.WebBase))
 {
-    BaseAddress = new Uri(baseUrlConfig!.WebBase)
-});
+    var defaultUrl = builder.Environment.IsDevelopment() ? "https://localhost:5001/" : throw new InvalidOperationException("Missing 'baseUrls:webBase' in configuration.");
+    builder.Services.AddScoped<HttpClient>(s => new HttpClient
+    {
+        BaseAddress = new Uri(defaultUrl)
+    });
+}
+else
+{
+    builder.Services.AddScoped<HttpClient>(s => new HttpClient
+    {
+        BaseAddress = new Uri(baseUrlConfig.WebBase!)
+    });
+}
 
 // add blazor services
 builder.Services.AddBlazoredLocalStorage();
