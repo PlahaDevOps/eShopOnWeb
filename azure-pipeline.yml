@@ -14,13 +14,8 @@ variables:
   iisPath: 'C:\inetpub\wwwroot\eShopOnWeb'
 
 steps:
-- task: NuGetToolInstaller@1
-  displayName: 'Install NuGet'
-
-- task: NuGetCommand@2
-  inputs:
-    command: restore
-    restoreSolution: '$(solution)'
+- script: |
+    dotnet restore $(solution)
   displayName: 'Restore NuGet Packages'
 
 - script: |

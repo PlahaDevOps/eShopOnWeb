@@ -19,7 +19,7 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />     
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
-    <DotNetCliToolReference Include="dotnet-xunit" Version="2.3.1" />
+    <!-- Removed DotNetCliToolReference as it's deprecated and causing NuGet restore issues -->
   </ItemGroup>
 
   <ItemGroup>
