@@ -1,0 +1,94 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  name: Default  # Uses your self-hosted agent 'winvm1'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  publishDir: '$(Build.ArtifactStagingDirectory)/publish'
+  iisPath: 'C:\inetpub\wwwroot\eShopOnWeb'
+
+steps:
+- task: NuGetToolInstaller@1
+  displayName: 'Install NuGet'
+
+- task: NuGetCommand@2
+  inputs:
+    command: restore
+    restoreSolution: '$(solution)'
+  displayName: 'Restore NuGet Packages'
+
+- script: |
+    dotnet build src/Web/Web.csproj -c $(buildConfiguration)
+  displayName: 'Build Web Project'
+
+- script: |
+    dotnet test tests/UnitTests/UnitTests.csproj --configuration $(buildConfiguration) --no-build
+  displayName: 'Run Unit Tests'
+  continueOnError: true  # Optional: change to false if you want to fail pipeline on test failure
+
+- script: |
+    dotnet publish src/Web/Web.csproj -c $(buildConfiguration) -o $(publishDir)
+  displayName: 'Publish Web Project'
+
+- task: PowerShell@2
+  displayName: 'Clean IIS Folder'
+  inputs:
+    targetType: inline
+    script: |
+      Write-Host "Cleaning IIS target folder"
+      if (Test-Path '$(iisPath)') {
+        Remove-Item -Path '$(iisPath)\*' -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "IIS folder cleaned successfully"
+      } else {
+        Write-Host "IIS folder does not exist, creating it"
+        New-Item -ItemType Directory -Path '$(iisPath)' -Force
+      }
+
+- task: CopyFiles@2
+  displayName: 'Copy Published Files to IIS Root'
+  inputs:
+    SourceFolder: '$(publishDir)'
+    Contents: '**'
+    TargetFolder: '$(iisPath)'
+
+- task: PowerShell@2
+  displayName: 'Restart IIS'
+  inputs:
+    targetType: inline
+    script: |
+      try {
+        Write-Host "Restarting IIS..."
+        Restart-Service W3SVC -Force
+        Write-Host "IIS restarted successfully"
+      }
+      catch {
+        Write-Host "Failed to restart IIS: $($_.Exception.Message)"
+        exit 1
+      }
+
+- task: PowerShell@2
+  displayName: 'Verify Deployment'
+  inputs:
+    targetType: inline
+    script: |
+      Write-Host "Verifying deployment..."
+      Start-Sleep -Seconds 10
+      try {
+        $response = Invoke-WebRequest -Uri "http://localhost:8080" -UseBasicParsing -TimeoutSec 30
+        if ($response.StatusCode -eq 200) {
+          Write-Host "Deployment verified successfully"
+        } else {
+          Write-Host "Deployment verification failed: Status $($response.StatusCode)"
+          exit 1
+        }
+      }
+      catch {
+        Write-Host "Deployment verification failed: $($_.Exception.Message)"
+        exit 1
+      }
