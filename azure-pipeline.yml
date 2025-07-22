@@ -7,7 +7,7 @@ pool:
   name: Default  # Uses your self-hosted agent 'winvm1'
 
 variables:
-  solution: '**/*.sln'
+  solution: 'eShopOnWeb.sln'  # Set the exact relative path
   buildPlatform: 'Any CPU'
   buildConfiguration: 'Release'
   publishDir: '$(Build.ArtifactStagingDirectory)/publish'
