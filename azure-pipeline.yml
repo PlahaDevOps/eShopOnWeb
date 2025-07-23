@@ -50,24 +50,68 @@ steps:
         if (Test-Path "IIS:\AppPools\$appPool") {
           Write-Host "Stopping app pool '$appPool' to release file locks..."
           Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 3
+          Start-Sleep -Seconds 5
         }
       }
       catch {
         Write-Host "Could not stop app pool (this is normal if WebAdministration is not available)"
       }
       
-      # Clean the directory
+      # Also try to stop the website if it exists
+      try {
+        $siteName = "eShopOnWeb"
+        if (Test-Path "IIS:\Sites\$siteName") {
+          Write-Host "Stopping website '$siteName'..."
+          Stop-Website -Name $siteName -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+        }
+      }
+      catch {
+        Write-Host "Could not stop website (this is normal if WebAdministration is not available)"
+      }
+      
+      # Clean the directory with retry logic
       if (Test-Path "$(iisTargetPath)") {
-        try {
-          # Try to remove all files and folders
-          Get-ChildItem -Path "$(iisTargetPath)" -Recurse | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-          Write-Host "Cleaned IIS folder successfully"
+        Write-Host "Attempting to clean directory..."
+        
+        # Try multiple times with different approaches
+        $maxRetries = 3
+        for ($i = 1; $i -le $maxRetries; $i++) {
+          try {
+            Write-Host "Clean attempt $i of $maxRetries..."
+            
+            # First try: Remove files individually
+            Get-ChildItem -Path "$(iisTargetPath)" -Recurse -File | ForEach-Object {
+              try {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+              }
+              catch {
+                Write-Host "Could not remove file: $($_.Name)"
+              }
+            }
+            
+            # Second try: Remove empty directories
+            Get-ChildItem -Path "$(iisTargetPath)" -Recurse -Directory | Sort-Object FullName -Descending | ForEach-Object {
+              try {
+                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+              }
+              catch {
+                Write-Host "Could not remove directory: $($_.Name)"
+              }
+            }
+            
+            Write-Host "Clean attempt $i completed"
+            break
+          }
+          catch {
+            Write-Host "Clean attempt $i failed: $($_.Exception.Message)"
+            if ($i -lt $maxRetries) {
+              Start-Sleep -Seconds 2
+            }
+          }
         }
-        catch {
-          Write-Host "Warning: Some files could not be removed (may be locked by IIS)"
-          Write-Host "This is normal and the deployment will continue"
-        }
+        
+        Write-Host "Directory cleaning completed"
       } else {
         New-Item -ItemType Directory -Path "$(iisTargetPath)" -Force
         Write-Host "Created IIS folder"
@@ -83,33 +127,46 @@ steps:
     OverWrite: true
     CleanTargetFolder: false
 
-# Recycle app pool (optional and safe)
+# Recycle app pool and start website
 - task: PowerShell@2
-  displayName: 'Recycle IIS App Pool'
+  displayName: 'Recycle IIS App Pool and Start Website'
   inputs:
     targetType: inline
     script: |
       $appPool = "eShopOnWeb"
-      Write-Host "Recycling app pool: $appPool"
+      $siteName = "eShopOnWeb"
+      Write-Host "Starting IIS services..."
       
       try {
         Import-Module WebAdministration -ErrorAction Stop
+        
+        # Start the app pool if it was stopped during cleaning
         if (Test-Path "IIS:\AppPools\$appPool") {
-          # Start the app pool if it was stopped during cleaning
+          Write-Host "Starting app pool '$appPool'..."
           Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 2
+          Start-Sleep -Seconds 3
           
           # Now recycle it
+          Write-Host "Recycling app pool '$appPool'..."
           Restart-WebAppPool -Name $appPool
           Write-Host "App pool '$appPool' recycled successfully."
         } else {
-          Write-Host "App pool '$appPool' not found. Skipping recycle."
-          Write-Host "Available app pools:"
+          Write-Host "App pool '$appPool' not found. Available app pools:"
           Get-ChildItem IIS:\AppPools | ForEach-Object { Write-Host "  - $($_.Name)" }
+        }
+        
+        # Start the website if it was stopped
+        if (Test-Path "IIS:\Sites\$siteName") {
+          Write-Host "Starting website '$siteName'..."
+          Start-Website -Name $siteName -ErrorAction SilentlyContinue
+          Write-Host "Website '$siteName' started successfully."
+        } else {
+          Write-Host "Website '$siteName' not found. Available sites:"
+          Get-ChildItem IIS:\Sites | ForEach-Object { Write-Host "  - $($_.Name)" }
         }
       }
       catch {
-        Write-Host "Warning: Could not recycle app pool: $($_.Exception.Message)"
+        Write-Host "Warning: Could not manage IIS services: $($_.Exception.Message)"
         Write-Host "This might be normal if WebAdministration module is not available"
       }
 
@@ -130,4 +187,5 @@ steps:
       }
       catch {
         Write-Host "Could not verify site: $($_.Exception.Message)"
+      }
       }
