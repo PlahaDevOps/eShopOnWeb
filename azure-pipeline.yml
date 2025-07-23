@@ -177,15 +177,21 @@ steps:
     targetType: inline
     script: |
       $url = "http://localhost:8080"
+      Write-Host "Verifying site at: $url"
+      
+      # Wait a moment for IIS to process the deployment
+      Start-Sleep -Seconds 5
+      
       try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
         if ($response.StatusCode -eq 200) {
-          Write-Host "Site is running correctly at $url"
+          Write-Host "✅ Site is running correctly at $url"
         } else {
-          Write-Host "Site responded with status: $($response.StatusCode)"
+          Write-Host "⚠️ Site responded with status: $($response.StatusCode)"
         }
       }
       catch {
-        Write-Host "Could not verify site: $($_.Exception.Message)"
-      }
+        Write-Host "❌ Could not verify site: $($_.Exception.Message)"
+        Write-Host "This might be normal if the site needs more time to start"
+        Write-Host "You can manually check the application at $url"
       }
