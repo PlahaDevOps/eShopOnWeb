@@ -41,9 +41,33 @@ steps:
   inputs:
     targetType: inline
     script: |
+      Write-Host "Cleaning IIS folder: $(iisTargetPath)"
+      
+      # Stop the app pool first to release file locks
+      try {
+        Import-Module WebAdministration -ErrorAction SilentlyContinue
+        $appPool = "eShopOnWeb"
+        if (Test-Path "IIS:\AppPools\$appPool") {
+          Write-Host "Stopping app pool '$appPool' to release file locks..."
+          Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+        }
+      }
+      catch {
+        Write-Host "Could not stop app pool (this is normal if WebAdministration is not available)"
+      }
+      
+      # Clean the directory
       if (Test-Path "$(iisTargetPath)") {
-        Remove-Item -Path "$(iisTargetPath)\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleaned IIS folder successfully"
+        try {
+          # Try to remove all files and folders
+          Get-ChildItem -Path "$(iisTargetPath)" -Recurse | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+          Write-Host "Cleaned IIS folder successfully"
+        }
+        catch {
+          Write-Host "Warning: Some files could not be removed (may be locked by IIS)"
+          Write-Host "This is normal and the deployment will continue"
+        }
       } else {
         New-Item -ItemType Directory -Path "$(iisTargetPath)" -Force
         Write-Host "Created IIS folder"
@@ -56,6 +80,8 @@ steps:
     SourceFolder: '$(publishDir)'
     Contents: '**'
     TargetFolder: '$(iisTargetPath)'
+    OverWrite: true
+    CleanTargetFolder: false
 
 # Recycle app pool (optional and safe)
 - task: PowerShell@2
@@ -64,12 +90,27 @@ steps:
     targetType: inline
     script: |
       $appPool = "eShopOnWeb"
-      Import-Module WebAdministration
-      if (Test-Path "IIS:\AppPools\$appPool") {
-        Restart-WebAppPool -Name $appPool
-        Write-Host "App pool '$appPool' recycled successfully."
-      } else {
-        Write-Host "App pool '$appPool' not found. Skipping recycle."
+      Write-Host "Recycling app pool: $appPool"
+      
+      try {
+        Import-Module WebAdministration -ErrorAction Stop
+        if (Test-Path "IIS:\AppPools\$appPool") {
+          # Start the app pool if it was stopped during cleaning
+          Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          
+          # Now recycle it
+          Restart-WebAppPool -Name $appPool
+          Write-Host "App pool '$appPool' recycled successfully."
+        } else {
+          Write-Host "App pool '$appPool' not found. Skipping recycle."
+          Write-Host "Available app pools:"
+          Get-ChildItem IIS:\AppPools | ForEach-Object { Write-Host "  - $($_.Name)" }
+        }
+      }
+      catch {
+        Write-Host "Warning: Could not recycle app pool: $($_.Exception.Message)"
+        Write-Host "This might be normal if WebAdministration module is not available"
       }
 
 # Optional verification
