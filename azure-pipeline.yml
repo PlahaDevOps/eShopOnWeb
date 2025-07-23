@@ -46,8 +46,18 @@ stages:
               targetType: inline
               script: |
                 Write-Host "Configuring staging environment..."
-                Copy-Item "src/Web/appsettings.Staging.json" "$(publishDir)/appsettings.json" -Force
-                Write-Host "Staging configuration applied"
+                Write-Host "Current directory: $(System.DefaultWorkingDirectory)"
+                Write-Host "Checking if staging config exists..."
+                
+                if (Test-Path "src/Web/appsettings.Staging.json") {
+                  Write-Host "Staging config found, copying..."
+                  Copy-Item "src/Web/appsettings.Staging.json" "$(publishDir)/appsettings.json" -Force
+                  Write-Host "Staging configuration applied"
+                } else {
+                  Write-Host "Staging config not found, using default config..."
+                  Copy-Item "src/Web/appsettings.json" "$(publishDir)/appsettings.json" -Force
+                  Write-Host "Default configuration applied"
+                }
 
           - task: PowerShell@2
             displayName: 'Clean Staging Folder'
