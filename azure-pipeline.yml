@@ -4,7 +4,7 @@ trigger:
       - main
 
 pool:
-  name: Default  # self-hosted agent
+  name: Default
 
 variables:
   solution: 'eShopOnWeb.sln'
@@ -26,141 +26,134 @@ stages:
     strategy:
       runOnce:
         deploy:
-    steps:
-    - script: dotnet restore $(solution)
-      displayName: 'Restore Packages'
+          steps:
+          - script: dotnet restore $(solution)
+            displayName: 'Restore Packages'
 
-    - script: dotnet build src/Web/Web.csproj -c $(buildConfiguration)
-      displayName: 'Build Project'
+          - script: dotnet build src/Web/Web.csproj -c $(buildConfiguration)
+            displayName: 'Build Project'
 
-    - script: dotnet test tests/UnitTests/UnitTests.csproj -c $(buildConfiguration)
-      displayName: 'Run Tests'
-      continueOnError: true
+          - script: dotnet test tests/UnitTests/UnitTests.csproj -c $(buildConfiguration)
+            displayName: 'Run Tests'
+            continueOnError: true
 
-    - script: dotnet publish src/Web/Web.csproj -c $(buildConfiguration) -o $(publishDir)
-      displayName: 'Publish Project'
+          - script: dotnet publish src/Web/Web.csproj -c $(buildConfiguration) -o $(publishDir)
+            displayName: 'Publish Project'
 
-    - task: PowerShell@2
-      displayName: 'Configure Staging Environment'
-      inputs:
-        targetType: inline
-        script: |
-          Write-Host "Configuring staging environment..."
-          # Copy staging-specific configuration
-          Copy-Item "src/Web/appsettings.Staging.json" "$(publishDir)/appsettings.json" -Force
-          Write-Host "Staging configuration applied"
+          - task: PowerShell@2
+            displayName: 'Configure Staging Environment'
+            inputs:
+              targetType: inline
+              script: |
+                Write-Host "Configuring staging environment..."
+                Copy-Item "src/Web/appsettings.Staging.json" "$(publishDir)/appsettings.json" -Force
+                Write-Host "Staging configuration applied"
 
-    - task: PowerShell@2
-      displayName: 'Clean Staging Folder'
-      inputs:
-        targetType: inline
-        script: |
-          Write-Host "Cleaning staging folder: $(stagingPath)"
-          
-          # Stop the staging app pool first to release file locks
-          try {
-            Import-Module WebAdministration -ErrorAction SilentlyContinue
-            $appPool = "$(stagingAppPool)"
-            if (Test-Path "IIS:\AppPools\$appPool") {
-              Write-Host "Stopping staging app pool '$appPool' to release file locks..."
-              Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-              Start-Sleep -Seconds 5
-            }
-          }
-          catch {
-            Write-Host "Could not stop staging app pool (this is normal if WebAdministration is not available)"
-          }
-          
-          # Clean the staging directory
-          if (Test-Path "$(stagingPath)") {
-            try {
-              Get-ChildItem -Path "$(stagingPath)" -Recurse -File | ForEach-Object {
+          - task: PowerShell@2
+            displayName: 'Clean Staging Folder'
+            inputs:
+              targetType: inline
+              script: |
+                Write-Host "Cleaning staging folder: $(stagingPath)"
                 try {
-                  Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                  Import-Module WebAdministration -ErrorAction SilentlyContinue
+                  $appPool = "$(stagingAppPool)"
+                  if (Test-Path "IIS:\AppPools\$appPool") {
+                    Write-Host "Stopping staging app pool '$appPool'..."
+                    Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 5
+                  }
                 }
                 catch {
-                  Write-Host "Could not remove file: $($_.Name)"
+                  Write-Host "Could not stop staging app pool"
                 }
-              }
-              Write-Host "Staging folder cleaned successfully"
-            }
-            catch {
-              Write-Host "Warning: Some staging files could not be removed"
-            }
-          } else {
-            New-Item -ItemType Directory -Path "$(stagingPath)" -Force
-            Write-Host "Created staging folder"
-          }
+                
+                if (Test-Path "$(stagingPath)") {
+                  try {
+                    Get-ChildItem -Path "$(stagingPath)" -Recurse -File | ForEach-Object {
+                      try {
+                        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+                      }
+                      catch {
+                        Write-Host "Could not remove file: $($_.Name)"
+                      }
+                    }
+                    Write-Host "Staging folder cleaned successfully"
+                  }
+                  catch {
+                    Write-Host "Warning: Some staging files could not be removed"
+                  }
+                } else {
+                  New-Item -ItemType Directory -Path "$(stagingPath)" -Force
+                  Write-Host "Created staging folder"
+                }
 
-    - task: CopyFiles@2
-      displayName: 'Deploy to Staging'
-      inputs:
-        SourceFolder: '$(publishDir)'
-        Contents: '**'
-        TargetFolder: '$(stagingPath)'
-        OverWrite: true
-        CleanTargetFolder: false
+          - task: CopyFiles@2
+            displayName: 'Deploy to Staging'
+            inputs:
+              SourceFolder: '$(publishDir)'
+              Contents: '**'
+              TargetFolder: '$(stagingPath)'
+              OverWrite: true
+              CleanTargetFolder: false
 
-    - task: PowerShell@2
-      displayName: 'Recycle Staging IIS'
-      inputs:
-        targetType: inline
-        script: |
-          $appPool = "$(stagingAppPool)"
-          $siteName = "$(stagingSite)"
-          Write-Host "Starting staging IIS services..."
-          
-          try {
-            Import-Module WebAdministration -ErrorAction Stop
-            
-            # Start the staging app pool
-            if (Test-Path "IIS:\AppPools\$appPool") {
-              Write-Host "Starting staging app pool '$appPool'..."
-              Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-              Start-Sleep -Seconds 3
-              
-              Write-Host "Recycling staging app pool '$appPool'..."
-              Restart-WebAppPool -Name $appPool
-              Write-Host "Staging app pool recycled successfully."
-            } else {
-              Write-Host "Staging app pool '$appPool' not found."
-            }
-            
-            # Start the staging website
-            if (Test-Path "IIS:\Sites\$siteName") {
-              Write-Host "Starting staging website '$siteName'..."
-              Start-Website -Name $siteName -ErrorAction SilentlyContinue
-              Write-Host "Staging website started successfully."
-            } else {
-              Write-Host "Staging website '$siteName' not found."
-            }
-          }
-          catch {
-            Write-Host "Warning: Could not manage staging IIS services: $($_.Exception.Message)"
-          }
+          - task: PowerShell@2
+            displayName: 'Recycle Staging IIS'
+            inputs:
+              targetType: inline
+              script: |
+                $appPool = "$(stagingAppPool)"
+                $siteName = "$(stagingSite)"
+                Write-Host "Starting staging IIS services..."
+                
+                try {
+                  Import-Module WebAdministration -ErrorAction Stop
+                  
+                  if (Test-Path "IIS:\AppPools\$appPool") {
+                    Write-Host "Starting staging app pool '$appPool'..."
+                    Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 3
+                    
+                    Write-Host "Recycling staging app pool '$appPool'..."
+                    Restart-WebAppPool -Name $appPool
+                    Write-Host "Staging app pool recycled successfully."
+                  } else {
+                    Write-Host "Staging app pool '$appPool' not found."
+                  }
+                  
+                  if (Test-Path "IIS:\Sites\$siteName") {
+                    Write-Host "Starting staging website '$siteName'..."
+                    Start-Website -Name $siteName -ErrorAction SilentlyContinue
+                    Write-Host "Staging website started successfully."
+                  } else {
+                    Write-Host "Staging website '$siteName' not found."
+                  }
+                }
+                catch {
+                  Write-Host "Warning: Could not manage staging IIS services: $($_.Exception.Message)"
+                }
 
-    - task: PowerShell@2
-      displayName: 'Verify Staging Site'
-      inputs:
-        targetType: inline
-        script: |
-          $url = "http://localhost:8081"
-          Write-Host "Verifying staging site at: $url"
-          
-          Start-Sleep -Seconds 5
-          
-          try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
-            if ($response.StatusCode -eq 200) {
-              Write-Host "✅ Staging site is running correctly at $url"
-            } else {
-              Write-Host "⚠️ Staging site responded with status: $($response.StatusCode)"
-            }
-          }
-          catch {
-            Write-Host "❌ Could not verify staging site: $($_.Exception.Message)"
-            Write-Host "This might be normal if the site needs more time to start"
-          }
+          - task: PowerShell@2
+            displayName: 'Verify Staging Site'
+            inputs:
+              targetType: inline
+              script: |
+                $url = "http://localhost:8081"
+                Write-Host "Verifying staging site at: $url"
+                Start-Sleep -Seconds 5
+                
+                try {
+                  $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
+                  if ($response.StatusCode -eq 200) {
+                    Write-Host "✅ Staging site is running correctly at $url"
+                  } else {
+                    Write-Host "⚠️ Staging site responded with status: $($response.StatusCode)"
+                  }
+                }
+                catch {
+                  Write-Host "❌ Could not verify staging site: $($_.Exception.Message)"
+                  Write-Host "This might be normal if the site needs more time to start"
+                }
 
 - stage: DeployToProduction
   displayName: 'Manual Promotion to Production'
@@ -180,21 +173,19 @@ stages:
               script: |
                 Write-Host "Cleaning production folder: $(productionPath)"
                 
-                # Stop the production app pool first to release file locks
                 try {
                   Import-Module WebAdministration -ErrorAction SilentlyContinue
                   $appPool = "$(productionAppPool)"
                   if (Test-Path "IIS:\AppPools\$appPool") {
-                    Write-Host "Stopping production app pool '$appPool' to release file locks..."
+                    Write-Host "Stopping production app pool '$appPool'..."
                     Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
                     Start-Sleep -Seconds 5
                   }
                 }
                 catch {
-                  Write-Host "Could not stop production app pool (this is normal if WebAdministration is not available)"
+                  Write-Host "Could not stop production app pool"
                 }
                 
-                # Clean the production directory
                 if (Test-Path "$(productionPath)") {
                   try {
                     Get-ChildItem -Path "$(productionPath)" -Recurse -File | ForEach-Object {
@@ -221,7 +212,6 @@ stages:
               targetType: inline
               script: |
                 Write-Host "Configuring production environment..."
-                # Ensure production uses default configuration (port 8080)
                 Copy-Item "src/Web/appsettings.json" "$(publishDir)/appsettings.json" -Force
                 Write-Host "Production configuration applied"
 
@@ -246,7 +236,6 @@ stages:
                 try {
                   Import-Module WebAdministration -ErrorAction Stop
                   
-                  # Start the production app pool
                   if (Test-Path "IIS:\AppPools\$appPool") {
                     Write-Host "Starting production app pool '$appPool'..."
                     Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
@@ -259,7 +248,6 @@ stages:
                     Write-Host "Production app pool '$appPool' not found."
                   }
                   
-                  # Start the production website
                   if (Test-Path "IIS:\Sites\$siteName") {
                     Write-Host "Starting production website '$siteName'..."
                     Start-Website -Name $siteName -ErrorAction SilentlyContinue
@@ -279,7 +267,6 @@ stages:
               script: |
                 $url = "http://localhost:8080"
                 Write-Host "Verifying production site at: $url"
-                
                 Start-Sleep -Seconds 5
                 
                 try {
