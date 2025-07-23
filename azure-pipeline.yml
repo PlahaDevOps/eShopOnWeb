@@ -4,149 +4,89 @@ trigger:
       - main
 
 pool:
-  name: Default  # Uses your self-hosted agent 'winvm1'
+  name: Default  # Uses your self-hosted agent on VM2
 
 variables:
-  solution: 'eShopOnWeb.sln'  # Set the exact relative path
-  buildPlatform: 'Any CPU'
+  solution: 'eShopOnWeb.sln'
   buildConfiguration: 'Release'
   publishDir: '$(Build.ArtifactStagingDirectory)/publish'
-  iisPath: 'C:\inetpub\wwwroot\eShopOnWeb'
+  iisTargetPath: 'C:\inetpub\eShopOnWeb'  # <-- your actual running folder
 
 steps:
+
+# Restore dependencies
 - script: |
     dotnet restore $(solution)
   displayName: 'Restore NuGet Packages'
 
+# Build the web project
 - script: |
     dotnet build src/Web/Web.csproj -c $(buildConfiguration)
   displayName: 'Build Web Project'
 
+# Optional tests
 - script: |
     dotnet test tests/UnitTests/UnitTests.csproj --configuration $(buildConfiguration) --no-build
   displayName: 'Run Unit Tests'
-  continueOnError: true  # Optional: change to false if you want to fail pipeline on test failure
+  continueOnError: true
 
+# Publish to staging folder
 - script: |
     dotnet publish src/Web/Web.csproj -c $(buildConfiguration) -o $(publishDir)
   displayName: 'Publish Web Project'
 
+# Clean IIS target folder
 - task: PowerShell@2
   displayName: 'Clean IIS Folder'
   inputs:
     targetType: inline
     script: |
-      Write-Host "Cleaning IIS target folder"
-      if (Test-Path '$(iisPath)') {
-        Remove-Item -Path '$(iisPath)\*' -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "IIS folder cleaned successfully"
+      if (Test-Path "$(iisTargetPath)") {
+        Remove-Item -Path "$(iisTargetPath)\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Cleaned IIS folder successfully"
       } else {
-        Write-Host "IIS folder does not exist, creating it"
-        New-Item -ItemType Directory -Path '$(iisPath)' -Force
+        New-Item -ItemType Directory -Path "$(iisTargetPath)" -Force
+        Write-Host "Created IIS folder"
       }
 
+# Copy published files to IIS folder
 - task: CopyFiles@2
-  displayName: 'Copy Published Files to IIS Root'
+  displayName: 'Deploy to IIS'
   inputs:
     SourceFolder: '$(publishDir)'
     Contents: '**'
-    TargetFolder: '$(iisPath)'
+    TargetFolder: '$(iisTargetPath)'
 
+# Recycle app pool (optional and safe)
 - task: PowerShell@2
-  displayName: 'Restart IIS'
+  displayName: 'Recycle IIS App Pool'
   inputs:
     targetType: inline
     script: |
-      Write-Host "Restarting IIS..."
-      
-      # Try iisreset first (most reliable)
+      $appPool = "eShopOnWeb"
+      Import-Module WebAdministration
+      if (Test-Path "IIS:\AppPools\$appPool") {
+        Restart-WebAppPool -Name $appPool
+        Write-Host "App pool '$appPool' recycled successfully."
+      } else {
+        Write-Host "App pool '$appPool' not found. Skipping recycle."
+      }
+
+# Optional verification
+- task: PowerShell@2
+  displayName: 'Verify Site is Running'
+  inputs:
+    targetType: inline
+    script: |
+      $url = "http://localhost:8080"
       try {
-        $result = & iisreset /restart 2>&1
-        if ($LASTEXITCODE -eq 0) {
-          Write-Host "IIS restarted successfully using iisreset"
-          exit 0
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+        if ($response.StatusCode -eq 200) {
+          Write-Host "Site is running correctly at $url"
         } else {
-          Write-Host "iisreset failed with exit code: $LASTEXITCODE"
-          Write-Host "Output: $result"
+          Write-Host "Site responded with status: $($response.StatusCode)"
         }
       }
       catch {
-        Write-Host "iisreset failed: $($_.Exception.Message)"
+        Write-Host "Could not verify site: $($_.Exception.Message)"
       }
-      
-      # Fallback: Try Restart-Service
-      try {
-        Restart-Service W3SVC -Force -ErrorAction Stop
-        Write-Host "IIS restarted successfully using Restart-Service"
-        exit 0
-      }
-      catch {
-        Write-Host "Restart-Service failed: $($_.Exception.Message)"
-      }
-      
-      # If all methods fail, don't fail the pipeline
-      Write-Host "IIS restart methods failed, but continuing deployment..."
-      Write-Host "Note: You may need to manually restart IIS or run the agent as administrator"
-      exit 0
-
-- task: PowerShell@2
-  displayName: 'Verify Deployment'
-  inputs:
-    targetType: inline
-    script: |
-      Write-Host "Verifying deployment..."
-      
-      # Check if IIS is running
-      try {
-        $iisStatus = Get-Service W3SVC -ErrorAction Stop
-        Write-Host "IIS Status: $($iisStatus.Status)"
-      }
-      catch {
-        Write-Host "Warning: Could not check IIS status: $($_.Exception.Message)"
-      }
-      
-      # Check what's listening on port 8080
-      try {
-        $listeners = netstat -an | findstr ":8080"
-        Write-Host "Port 8080 listeners:"
-        Write-Host $listeners
-      }
-      catch {
-        Write-Host "Could not check port 8080 listeners"
-      }
-      
-      # Try multiple URLs and ports
-      $urls = @(
-        "http://localhost:8080",
-        "http://localhost:80", 
-        "http://localhost",
-        "http://127.0.0.1:8080"
-      )
-      
-      $success = $false
-      foreach ($url in $urls) {
-        try {
-          Write-Host "Trying to connect to: $url"
-          $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
-          if ($response.StatusCode -eq 200) {
-            Write-Host "Deployment verified successfully at: $url"
-            $success = $true
-            break
-          } else {
-            Write-Host "Got response from $url but status was: $($response.StatusCode)"
-          }
-        }
-        catch {
-          Write-Host "Failed to connect to $url : $($_.Exception.Message)"
-        }
-      }
-      
-      if (-not $success) {
-        Write-Host "Deployment verification failed for all URLs"
-        Write-Host "This might be normal if the application needs more time to start"
-        Write-Host "You can manually check the application at http://localhost:8080"
-        # Don't fail the pipeline - just warn
-        Write-Host "Continuing with deployment..."
-      }
-      
-      exit 0
