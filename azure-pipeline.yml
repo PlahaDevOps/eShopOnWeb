@@ -26,7 +26,7 @@ steps:
 
 # Optional tests
 - script: |
-    dotnet test tests/UnitTests/UnitTests.csproj --configuration $(buildConfiguration) --no-build
+    dotnet test tests/UnitTests/UnitTests.csproj --configuration $(buildConfiguration)
   displayName: 'Run Unit Tests'
   continueOnError: true
 
