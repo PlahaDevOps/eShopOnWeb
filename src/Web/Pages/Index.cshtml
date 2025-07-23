@@ -3,9 +3,9 @@
     ViewData["Title"] = "Catalog";
     @model IndexModel
 }
-<!-- Pipeline Test: UI Change - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") -->
-<div style="background-color: #28a745; color: white; text-align: center; padding: 10px; margin-bottom: 20px;">
-    🚀 Pipeline Test: This change was deployed automatically! - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+<!-- Staging/Production Pipeline Test - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") -->
+<div style="background-color: #007bff; color: white; text-align: center; padding: 10px; margin-bottom: 20px;">
+    🔄 Staging/Production Test: This will deploy to staging first, then production! - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
 </div>
 <section class="esh-catalog-hero">
     <div class="container">
