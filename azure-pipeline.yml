@@ -27,6 +27,9 @@ stages:
       runOnce:
         deploy:
           steps:
+          - checkout: self
+            displayName: 'Checkout Source Code'
+            
           - script: dotnet restore $(solution)
             displayName: 'Restore Packages'
 
@@ -176,6 +179,9 @@ stages:
       runOnce:
         deploy:
           steps:
+          - checkout: self
+            displayName: 'Checkout Source Code'
+            
           - task: PowerShell@2
             displayName: 'Clean Production Folder'
             inputs:
