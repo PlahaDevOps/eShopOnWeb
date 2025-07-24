@@ -69,7 +69,7 @@ stages:
             inputs:
               command: 'test'
               projects: '**/*Tests/*.csproj'
-              arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage" --results-directory $(Build.ArtifactStagingDirectory)/TestResults'
+              arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage"'
               publishTestResults: true
 
           - task: PublishCodeCoverageResults@1
