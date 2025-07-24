@@ -8,10 +8,7 @@ parameters:
     type: string
     default: 'production'
 
-trigger:
-  branches:
-    include:
-      - main
+trigger: none  # Temporarily disabled while testing new pipeline
 
 pool:
   name: Default
