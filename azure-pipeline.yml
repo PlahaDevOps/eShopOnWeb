@@ -1,3 +1,13 @@
+parameters:
+  - name: stagingEnvironment
+    displayName: 'Staging Environment'
+    type: string
+    default: 'staging'
+  - name: productionEnvironment
+    displayName: 'Production Environment'
+    type: string
+    default: 'production'
+
 trigger:
   branches:
     include:
@@ -10,19 +20,19 @@ variables:
   solution: 'eShopOnWeb.sln'
   buildConfiguration: 'Release'
   publishDir: '$(Build.ArtifactStagingDirectory)/publish'
-  stagingPath: 'C:\inetpub\eShopOnWeb-Staging'
-  productionPath: 'C:\inetpub\eShopOnWeb'
-  stagingSite: 'eShopOnWeb-Staging'
-  productionSite: 'eShopOnWeb'
-  stagingAppPool: 'eShopOnWeb-Staging'
-  productionAppPool: 'eShopOnWeb'
+  stagingPath: 'C:\inetpub\eShopOnWeb-${{ parameters.stagingEnvironment }}'
+  productionPath: 'C:\inetpub\eShopOnWeb-${{ parameters.productionEnvironment }}'
+  stagingSite: 'eShopOnWeb-${{ parameters.stagingEnvironment }}'
+  productionSite: 'eShopOnWeb-${{ parameters.productionEnvironment }}'
+  stagingAppPool: 'eShopOnWeb-${{ parameters.stagingEnvironment }}'
+  productionAppPool: 'eShopOnWeb-${{ parameters.productionEnvironment }}'
 
 stages:
 - stage: BuildAndDeployStaging
   displayName: 'Build and Deploy to Staging'
   jobs:
   - deployment: DeployStaging
-    environment: 'Staging'
+    environment: '${{ parameters.stagingEnvironment }}'
     strategy:
       runOnce:
         deploy:
@@ -110,6 +120,13 @@ stages:
               OverWrite: true
               CleanTargetFolder: false
 
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Staging Artifacts'
+            inputs:
+              PathtoPublish: '$(publishDir)'
+              ArtifactName: 'staging-artifacts'
+              publishLocation: 'Container'
+
           - task: PowerShell@2
             displayName: 'Recycle Staging IIS'
             inputs:
@@ -174,7 +191,7 @@ stages:
   condition: succeeded()
   jobs:
   - deployment: DeployProd
-    environment: 'Production'
+    environment: '${{ parameters.productionEnvironment }}'
     strategy:
       runOnce:
         deploy:
@@ -222,14 +239,18 @@ stages:
                   Write-Host "Created production folder"
                 }
 
-          - script: dotnet restore $(solution)
-            displayName: 'Restore Packages (Production)'
+          - download: current
+            artifact: staging-artifacts
+            displayName: 'Download Staging Artifacts'
 
-          - script: dotnet build src/Web/Web.csproj -c $(buildConfiguration)
-            displayName: 'Build Project (Production)'
-
-          - script: dotnet publish src/Web/Web.csproj -c $(buildConfiguration) -o $(productionPath)
-            displayName: 'Publish to Production'
+          - task: CopyFiles@2
+            displayName: 'Deploy Staging Artifacts to Production'
+            inputs:
+              SourceFolder: '$(Pipeline.Workspace)/staging-artifacts'
+              Contents: '**'
+              TargetFolder: '$(productionPath)'
+              OverWrite: true
+              CleanTargetFolder: false
 
           - task: PowerShell@2
             displayName: 'Configure Production Environment'
