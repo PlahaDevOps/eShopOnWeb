@@ -1,0 +1,43 @@
+# Test Pipeline for Universal Package Publishing
+# This pipeline only tests the Universal Package publishing functionality
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  name: 'Default'
+
+variables:
+  packageVersion: '1.0.0'
+
+stages:
+  - stage: TestUniversalPackages
+    displayName: 'Test Universal Package Publishing'
+    jobs:
+      - job: TestPublish
+        displayName: 'Test Universal Package Publish'
+        steps:
+          - task: PowerShell@2
+            displayName: 'Create test content'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Creating test content for Universal Package..."
+                $testPath = "$(Build.ArtifactStagingDirectory)/test-content"
+                New-Item -ItemType Directory -Path $testPath -Force
+                "This is a test file for Universal Package publishing" | Out-File -FilePath "$testPath/test.txt"
+                Write-Host "Test content created at: $testPath"
+
+          - task: UniversalPackages@0
+            displayName: 'Test Universal Package Publish'
+            inputs:
+              command: 'publish'
+              feed: 'learndevops4mes/eShopOnWeb/eShopOnWeb-packages'
+              vstsPackagePublishDescription: 'Test package for debugging Universal Package publishing'
+              versionOption: 'custom'
+              versionPublish: '$(packageVersion)'
+              packagePublishDescription: 'Test package to debug Universal Package publishing issues'
+              packageName: 'test-universal-package'
+              path: '$(Build.ArtifactStagingDirectory)/test-content' 
