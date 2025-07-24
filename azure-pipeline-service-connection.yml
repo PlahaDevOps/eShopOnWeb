@@ -126,7 +126,7 @@ stages:
             displayName: 'Publish Universal Package'
             inputs:
               command: 'publish'
-              vstsFeed: 'eShopOnWeb-packages'
+              feed: 'eShopOnWeb-packages'
               vstsPackagePublishDescription: 'Deployment artifacts for eShopOnWeb application'
               vstsPackagePublishDescriptionFile: 'README.md'
               versionOption: 'custom'
@@ -141,7 +141,7 @@ stages:
             displayName: 'Publish Analytics Package'
             inputs:
               command: 'publish'
-              vstsFeed: 'eShopOnWeb-packages'
+              feed: 'eShopOnWeb-packages'
               vstsPackagePublishDescription: 'Analytics and monitoring data for eShopOnWeb'
               versionOption: 'custom'
               versionPublish: '$(packageVersion)'
