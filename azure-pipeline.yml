@@ -216,23 +216,33 @@ stages:
                   Write-Host "Created production folder"
                 }
 
+          - script: dotnet restore $(solution)
+            displayName: 'Restore Packages (Production)'
+
+          - script: dotnet build src/Web/Web.csproj -c $(buildConfiguration)
+            displayName: 'Build Project (Production)'
+
+          - script: dotnet publish src/Web/Web.csproj -c $(buildConfiguration) -o $(productionPath)
+            displayName: 'Publish to Production'
+
           - task: PowerShell@2
             displayName: 'Configure Production Environment'
             inputs:
               targetType: inline
               script: |
                 Write-Host "Configuring production environment..."
-                Copy-Item "src/Web/appsettings.json" "$(publishDir)/appsettings.json" -Force
-                Write-Host "Production configuration applied"
-
-          - task: CopyFiles@2
-            displayName: 'Deploy to Production'
-            inputs:
-              SourceFolder: '$(publishDir)'
-              Contents: '**'
-              TargetFolder: '$(productionPath)'
-              OverWrite: true
-              CleanTargetFolder: false
+                Write-Host "Current directory: $(System.DefaultWorkingDirectory)"
+                Write-Host "Checking if production config exists..."
+                
+                if (Test-Path "src/Web/appsettings.Production.json") {
+                  Write-Host "Production config found, copying..."
+                  Copy-Item "src/Web/appsettings.Production.json" "$(productionPath)/appsettings.json" -Force
+                  Write-Host "Production configuration applied"
+                } else {
+                  Write-Host "Production config not found, using default config..."
+                  Copy-Item "src/Web/appsettings.json" "$(productionPath)/appsettings.json" -Force
+                  Write-Host "Default configuration applied"
+                }
 
           - task: PowerShell@2
             displayName: 'Recycle Production IIS'
