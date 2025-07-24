@@ -117,7 +117,7 @@ stages:
             inputs:
               command: 'push'
               packagesToPush: '$(packagesDir)/*.nupkg'
-              vstsFeed: 'eShopOnWeb-packages'
+              vstsFeed: '$(artifactsFeed)'
 
       - job: PublishUniversalPackages
         displayName: 'Publish Universal Packages'
@@ -126,7 +126,7 @@ stages:
             displayName: 'Publish Universal Package'
             inputs:
               command: 'publish'
-              feed: 'eShopOnWeb-packages'
+              feed: '$(artifactsFeed)'
               vstsPackagePublishDescription: 'Deployment artifacts for eShopOnWeb application'
               vstsPackagePublishDescriptionFile: 'README.md'
               versionOption: 'custom'
@@ -141,7 +141,7 @@ stages:
             displayName: 'Publish Analytics Package'
             inputs:
               command: 'publish'
-              feed: 'eShopOnWeb-packages'
+              feed: '$(artifactsFeed)'
               vstsPackagePublishDescription: 'Analytics and monitoring data for eShopOnWeb'
               versionOption: 'custom'
               versionPublish: '$(packageVersion)'
