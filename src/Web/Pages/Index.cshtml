@@ -3,9 +3,11 @@
     ViewData["Title"] = "Catalog";
     @model IndexModel
 }
-<!-- Staging/Production Pipeline Test - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") -->
-<div style="background-color: #007bff; color: white; text-align: center; padding: 10px; margin-bottom: 20px;">
-    🔄 Staging/Production Test: This will deploy to staging first, then production! - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+<!-- Pipeline Test Banner - @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") -->
+<div style="background: linear-gradient(45deg, #ff6b6b, #4ecdc4); color: white; text-align: center; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    🚀 <strong>PIPELINE TEST UPDATE!</strong> 🚀<br>
+    This change was deployed via Azure DevOps Pipeline<br>
+    <small>Deployment Time: @DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") | Environment: Staging (Port 8081)</small>
 </div>
 <section class="esh-catalog-hero">
     <div class="container">
