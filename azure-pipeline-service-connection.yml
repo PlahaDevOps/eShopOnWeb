@@ -44,9 +44,9 @@ stages:
         displayName: 'Build Solution'
         steps:
           - task: UseDotNet@2
-            displayName: 'Use .NET 6.x'
+            displayName: 'Use .NET 8.x'
             inputs:
-              version: '6.x'
+              version: '8.x'
               includePreviewVersions: false
 
           - task: DotNetCoreCLI@2
@@ -100,9 +100,9 @@ stages:
         displayName: 'Package NuGet Projects'
         steps:
           - task: UseDotNet@2
-            displayName: 'Use .NET 6.x'
+            displayName: 'Use .NET 8.x'
             inputs:
-              version: '6.x'
+              version: '8.x'
               includePreviewVersions: false
 
           - task: DotNetCoreCLI@2
