@@ -132,6 +132,7 @@ stages:
               versionOption: 'custom'
               versionPublish: '$(packageVersion)'
               packagePublishDescription: 'Deployment package containing the built application artifacts'
+              packageName: 'eShopOnWeb-deployment'
 
       - job: PackageAnalytics
         displayName: 'Package Analytics'
@@ -145,6 +146,7 @@ stages:
               versionOption: 'custom'
               versionPublish: '$(packageVersion)'
               packagePublishDescription: 'Analytics package containing monitoring and telemetry data'
+              packageName: 'eShopOnWeb-analytics'
 
   - stage: DeployStaging
     displayName: 'Deploy to Staging'
