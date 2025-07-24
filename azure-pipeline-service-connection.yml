@@ -1,0 +1,293 @@
+# Azure DevOps Pipeline with Azure Artifacts Integration (Service Connection)
+# This pipeline uses Azure DevOps Service Connection for authentication
+
+parameters:
+  - name: environment
+    displayName: 'Environment to Deploy'
+    type: string
+    default: 'staging'
+    values:
+      - staging
+      - production
+  
+  - name: publishToArtifacts
+    displayName: 'Publish to Azure Artifacts'
+    type: boolean
+    default: true
+  
+  - name: packageVersion
+    displayName: 'Package Version'
+    type: string
+    default: '1.0.0'
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  packagesDir: '$(Build.ArtifactStagingDirectory)/packages'
+  artifactsFeed: 'eShopOnWeb-packages'
+
+stages:
+  - stage: Build
+    displayName: 'Build and Test'
+    jobs:
+      - job: Build
+        displayName: 'Build Solution'
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Use .NET 6.x'
+            inputs:
+              version: '6.x'
+              includePreviewVersions: false
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Restore NuGet packages'
+            inputs:
+              command: 'restore'
+              projects: '$(solution)'
+              feedsToUse: 'select'
+              vstsFeed: 'eShopOnWeb-packages'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Build solution'
+            inputs:
+              command: 'build'
+              projects: '$(solution)'
+              arguments: '--configuration $(buildConfiguration) --no-restore'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Run tests'
+            inputs:
+              command: 'test'
+              projects: '**/*Tests/*.csproj'
+              arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage" --results-directory $(Build.ArtifactStagingDirectory)/TestResults'
+              publishTestResults: true
+
+          - task: PublishCodeCoverageResults@1
+            displayName: 'Publish code coverage'
+            inputs:
+              codeCoverageTool: 'Cobertura'
+              summaryFileLocation: '$(Build.ArtifactStagingDirectory)/TestResults/**/coverage.cobertura.xml'
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Publish application'
+            inputs:
+              command: 'publish'
+              projects: 'src/Web/Web.csproj'
+              arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish --no-build'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish build artifacts'
+            inputs:
+              pathToPublish: '$(Build.ArtifactStagingDirectory)/publish'
+              artifactName: 'drop'
+
+  - stage: Package
+    displayName: 'Package for Azure Artifacts'
+    dependsOn: Build
+    condition: and(succeeded(), eq('${{ parameters.publishToArtifacts }}', 'true'))
+    jobs:
+      - job: PackageNuGet
+        displayName: 'Package NuGet Projects'
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Use .NET 6.x'
+            inputs:
+              version: '6.x'
+              includePreviewVersions: false
+
+          - task: DotNetCoreCLI@2
+            displayName: 'Pack projects for Azure Artifacts'
+            inputs:
+              command: 'pack'
+              packagesToPack: '**/*.csproj'
+              arguments: '--configuration $(buildConfiguration) --output $(packagesDir) --version-suffix $(packageVersion)'
+
+          - task: NuGetCommand@2
+            displayName: 'Push NuGet Packages to Azure Artifacts'
+            inputs:
+              command: 'push'
+              packagesToPush: '$(packagesDir)/*.nupkg'
+              vstsFeed: 'eShopOnWeb-packages'
+
+      - job: PublishUniversalPackages
+        displayName: 'Publish Universal Packages'
+        steps:
+          - task: UniversalPackages@0
+            displayName: 'Publish Universal Package'
+            inputs:
+              command: 'publish'
+              vstsFeed: 'eShopOnWeb-packages'
+              vstsPackagePublishDescription: 'Deployment artifacts for eShopOnWeb application'
+              vstsPackagePublishDescriptionFile: 'README.md'
+              versionOption: 'custom'
+              versionPublish: '$(packageVersion)'
+              packagePublishDescription: 'Deployment package containing the built application artifacts'
+
+      - job: PackageAnalytics
+        displayName: 'Package Analytics'
+        steps:
+          - task: UniversalPackages@0
+            displayName: 'Publish Analytics Package'
+            inputs:
+              command: 'publish'
+              vstsFeed: 'eShopOnWeb-packages'
+              vstsPackagePublishDescription: 'Analytics and monitoring data for eShopOnWeb'
+              versionOption: 'custom'
+              versionPublish: '$(packageVersion)'
+              packagePublishDescription: 'Analytics package containing monitoring and telemetry data'
+
+  - stage: DeployStaging
+    displayName: 'Deploy to Staging'
+    dependsOn: Build
+    condition: and(succeeded(), eq('${{ parameters.environment }}', 'staging'))
+    jobs:
+      - deployment: Deploy
+        displayName: 'Deploy to Staging'
+        environment: 'staging'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadBuildArtifacts@1
+                  displayName: 'Download build artifacts'
+                  inputs:
+                    buildType: 'current'
+                    artifactName: 'drop'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                - task: PowerShell@2
+                  displayName: 'Stop IIS Application Pool'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Stopping IIS Application Pool..."
+                      Stop-WebAppPool -Name "eShopOnWeb-Staging"
+                      Write-Host "Application Pool stopped successfully"
+
+                - task: PowerShell@2
+                  displayName: 'Deploy to IIS'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Deploying to IIS..."
+                      $sourcePath = "$(System.ArtifactsDirectory)/drop"
+                      $destinationPath = "C:\inetpub\wwwroot\eShopOnWeb-Staging"
+                      
+                      if (Test-Path $destinationPath) {
+                          Remove-Item -Path $destinationPath -Recurse -Force
+                      }
+                      
+                      Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force
+                      Write-Host "Deployment completed successfully"
+
+                - task: PowerShell@2
+                  displayName: 'Start IIS Application Pool'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Starting IIS Application Pool..."
+                      Start-WebAppPool -Name "eShopOnWeb-Staging"
+                      Write-Host "Application Pool started successfully"
+
+                - task: PowerShell@2
+                  displayName: 'Verify deployment'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Verifying deployment..."
+                      Start-Sleep -Seconds 10
+                      try {
+                          $response = Invoke-WebRequest -Uri "http://localhost/eShopOnWeb-Staging" -UseBasicParsing
+                          if ($response.StatusCode -eq 200) {
+                              Write-Host "Deployment verification successful"
+                          } else {
+                              Write-Host "Deployment verification failed"
+                              exit 1
+                          }
+                      } catch {
+                          Write-Host "Error verifying deployment: $_"
+                          exit 1
+                      }
+
+  - stage: DeployProduction
+    displayName: 'Deploy to Production'
+    dependsOn: Build
+    condition: and(succeeded(), eq('${{ parameters.environment }}', 'production'))
+    jobs:
+      - deployment: Deploy
+        displayName: 'Deploy to Production'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadBuildArtifacts@1
+                  displayName: 'Download build artifacts'
+                  inputs:
+                    buildType: 'current'
+                    artifactName: 'drop'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                - task: PowerShell@2
+                  displayName: 'Stop IIS Application Pool'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Stopping IIS Application Pool..."
+                      Stop-WebAppPool -Name "eShopOnWeb-Production"
+                      Write-Host "Application Pool stopped successfully"
+
+                - task: PowerShell@2
+                  displayName: 'Deploy to IIS'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Deploying to IIS..."
+                      $sourcePath = "$(System.ArtifactsDirectory)/drop"
+                      $destinationPath = "C:\inetpub\wwwroot\eShopOnWeb-Production"
+                      
+                      if (Test-Path $destinationPath) {
+                          Remove-Item -Path $destinationPath -Recurse -Force
+                      }
+                      
+                      Copy-Item -Path "$sourcePath\*" -Destination $destinationPath -Recurse -Force
+                      Write-Host "Deployment completed successfully"
+
+                - task: PowerShell@2
+                  displayName: 'Start IIS Application Pool'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Starting IIS Application Pool..."
+                      Start-WebAppPool -Name "eShopOnWeb-Production"
+                      Write-Host "Application Pool started successfully"
+
+                - task: PowerShell@2
+                  displayName: 'Verify deployment'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Verifying deployment..."
+                      Start-Sleep -Seconds 10
+                      try {
+                          $response = Invoke-WebRequest -Uri "http://localhost/eShopOnWeb-Production" -UseBasicParsing
+                          if ($response.StatusCode -eq 200) {
+                              Write-Host "Deployment verification successful"
+                          } else {
+                              Write-Host "Deployment verification failed"
+                              exit 1
+                          }
+                      } catch {
+                          Write-Host "Error verifying deployment: $_"
+                          exit 1
+                      } 
