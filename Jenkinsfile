@@ -2,6 +2,9 @@ pipeline {
     agent any
 
     environment {
+        // Ensure Jenkins sees the globally installed dotnet-sonarscanner
+        PATH = "C:\\Users\\admin\\.dotnet\\tools;${PATH}"
+
         BUILD_CONFIG = 'Release'
         SOLUTION = 'eShopOnWeb.sln'
         PUBLISH_DIR = 'publish'
@@ -16,10 +19,19 @@ pipeline {
 
         // SonarQube
         SONAR_HOST_URL = 'http://192.168.1.39:9000'
-        SONAR_TOKEN = credentials('sonar-tak') // Jenkins secret text credential
+        SONAR_TOKEN = credentials('sonar-tak')
     }
 
     stages {
+        stage('Diagnostics') {
+            steps {
+                echo "Current PATH:"
+                bat 'echo %PATH%'
+                echo "Current user running Jenkins:"
+                bat 'whoami'
+            }
+        }
+
         stage('Check Tools') {
             steps {
                 bat 'dotnet --list-sdks'
@@ -56,7 +68,6 @@ pipeline {
             }
         }
 
-        // ✅ Updated SonarQube Analysis for .NET
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
@@ -99,8 +110,7 @@ pipeline {
                             Copy-Item 'src/Web/appsettings.Staging.json' '%PUBLISH_DIR%/appsettings.json' -Force
                         } else {
                             Copy-Item 'src/Web/appsettings.json' '%PUBLISH_DIR%/appsettings.json' -Force
-                        }
-                    "
+                        }"
                 '''
             }
         }
