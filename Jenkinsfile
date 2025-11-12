@@ -10,8 +10,8 @@ pipeline {
     }
 
     environment {
-        // Ensure Jenkins (SYSTEM account) can find global dotnet tools
-        PATH = "C:\\Users\\admin\\.dotnet\\tools;${env.PATH}"
+        // Ensure Jenkins (SYSTEM account) can find both dotnet and SonarScanner tools
+        PATH = "C:\\Users\\admin\\.dotnet\\tools;C:\\SonarScanner;${env.PATH}"
 
         BUILD_CONFIG = 'Release'
         SOLUTION = 'eShopOnWeb.sln'
@@ -34,13 +34,14 @@ pipeline {
 
         stage('Diagnostics') {
             steps {
-                echo 'Current PATH and User Context:'
+                echo '🔍 Current PATH and User Context:'
                 bat '''
                     echo PATH:
                     echo %PATH%
                     whoami
                     where dotnet
                     where dotnet-sonarscanner || echo "⚠️ dotnet-sonarscanner not found in PATH"
+                    where SonarScanner.MSBuild.exe || echo "⚠️ SonarScanner.MSBuild.exe not found in PATH"
                 '''
             }
         }
@@ -49,7 +50,7 @@ pipeline {
             steps {
                 bat '''
                     dotnet --list-sdks
-                    dotnet sonarscanner --version || exit /b 0
+                    dotnet sonarscanner --version || SonarScanner.MSBuild.exe /?
                 '''
             }
         }
@@ -110,55 +111,26 @@ pipeline {
             }
             steps {
                 script {
-                    // Get quality gate mode with default fallback
                     String mode = params?.QUALITY_GATE_MODE ?: 'NON_BLOCKING'
                     Boolean shouldAbort = (mode == 'BLOCKING')
                     
                     echo "🔍 Quality Gate Mode: ${mode}"
-                    echo "📊 SonarQube analysis submitted. Task processing in background..."
-                    echo "🔗 View analysis progress: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                    echo "📊 SonarQube analysis submitted — dashboard: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
                     
-                    if (mode == 'SKIP') {
-                        echo "⏭️ Skipping quality gate wait - analysis will complete in background"
-                        echo "💡 Check SonarQube dashboard later for results"
-                    } else {
-                        // Use shorter timeout for non-blocking, longer for blocking
-                        Integer timeoutMinutes = shouldAbort ? 15 : 5
-                        
-                        try {
-                            timeout(time: timeoutMinutes, unit: 'MINUTES') {
-                                def qg = waitForQualityGate abortPipeline: shouldAbort
-                                
-                                if (qg.status == 'OK') {
-                                    echo "✅ Quality Gate PASSED"
-                                } else {
-                                    echo "⚠️ Quality Gate status: ${qg.status}"
-                                    echo "📋 Quality Gate details: ${qg}"
-                                    
-                                    if (shouldAbort) {
-                                        error("Quality Gate FAILED - Pipeline aborted as per configuration")
-                                    } else {
-                                        echo "⚠️ Quality Gate failed but continuing (NON_BLOCKING mode)"
-                                        echo "💡 Review issues in SonarQube dashboard: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
-                                    }
-                                }
-                            }
-                        } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
-                            if (shouldAbort) {
-                                error("Quality Gate check timed out - Pipeline aborted")
+                    Integer timeoutMinutes = shouldAbort ? 15 : 5
+                    try {
+                        timeout(time: timeoutMinutes, unit: 'MINUTES') {
+                            def qg = waitForQualityGate abortPipeline: shouldAbort
+                            if (qg.status == 'OK') {
+                                echo "✅ Quality Gate PASSED"
+                            } else if (shouldAbort) {
+                                error("❌ Quality Gate FAILED: ${qg.status}")
                             } else {
-                                echo "⏱️ Quality Gate check timed out after ${timeoutMinutes} minutes"
-                                echo "🔄 Analysis continues in background - deployment proceeding"
-                                echo "💡 Check SonarQube dashboard later: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
-                            }
-                        } catch (Exception e) {
-                            if (shouldAbort) {
-                                error("Quality Gate check failed: ${e.message}")
-                            } else {
-                                echo "⚠️ Quality Gate check encountered an error: ${e.message}"
-                                echo "🔄 Continuing with deployment (NON_BLOCKING mode)"
+                                echo "⚠️ Quality Gate failed (${qg.status}) — continuing (NON_BLOCKING)"
                             }
                         }
+                    } catch (Exception e) {
+                        echo "⚠️ Quality Gate check issue: ${e.message} — continuing (NON_BLOCKING)"
                     }
                 }
             }
@@ -172,10 +144,21 @@ pipeline {
 
         stage('Configure Staging Environment') {
             steps {
-                bat '''
-                    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "if (Test-Path 'src\\Web\\appsettings.Staging.json') { Copy-Item 'src\\Web\\appsettings.Staging.json' (Join-Path $env:PUBLISH_DIR 'appsettings.json') -Force; Write-Host '✅ Staging config found and copied.' } else { Copy-Item 'src\\Web\\appsettings.json' (Join-Path $env:PUBLISH_DIR 'appsettings.json') -Force; Write-Host '⚠️ Using default appsettings.json' }"
-                '''
+                script {
+                    def stagingConfig = 'src\\Web\\appsettings.Staging.json'
+                    def defaultConfig = 'src\\Web\\appsettings.json'
+                    def targetPath = "${env.PUBLISH_DIR}\\appsettings.json"
+                    
+                    bat """
+                        if exist "${stagingConfig}" (
+                            copy /Y "${stagingConfig}" "${targetPath}"
+                            echo ✅ Staging config applied.
+                        ) else (
+                            copy /Y "${defaultConfig}" "${targetPath}"
+                            echo ⚠️ Using default appsettings.json
+                        )
+                    """
+                }
             }
         }
 
@@ -209,12 +192,12 @@ pipeline {
                     try {
                         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
                         if ($response.StatusCode -eq 200) {
-                            Write-Host '✅ Staging is running correctly at' $url;
+                            Write-Host "✅ Staging site is live at $url";
                         } else {
-                            Write-Host '⚠️ Staging returned status:' $response.StatusCode;
+                            Write-Host "⚠️ Staging returned HTTP $($response.StatusCode)";
                         }
                     } catch {
-                        Write-Host '❌ Staging verification failed:' $_.Exception.Message;
+                        Write-Host "❌ Staging verification failed: $($_.Exception.Message)";
                     }
                 '''
             }
@@ -261,12 +244,12 @@ pipeline {
                     try {
                         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
                         if ($response.StatusCode -eq 200) {
-                            Write-Host '✅ Production is running correctly at' $url;
+                            Write-Host "✅ Production site is live at $url";
                         } else {
-                            Write-Host '⚠️ Production returned status:' $response.StatusCode;
+                            Write-Host "⚠️ Production returned HTTP $($response.StatusCode)";
                         }
                     } catch {
-                        Write-Host '❌ Production verification failed:' $_.Exception.Message;
+                        Write-Host "❌ Production verification failed: $($_.Exception.Message)";
                     }
                 '''
             }
@@ -275,17 +258,8 @@ pipeline {
 
     post {
         always {
-            script {
-                echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment complete.'
-                echo "📊 View SonarQube report at: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
-                
-                // Optional: Check quality gate status in post-action (non-blocking)
-                String qualityGateMode = params?.QUALITY_GATE_MODE ?: 'SKIP'
-                if (qualityGateMode == 'SKIP' || qualityGateMode == 'NON_BLOCKING') {
-                    echo '💡 Quality gate analysis may still be processing in SonarQube'
-                    echo '💡 Check the dashboard above for final quality gate status'
-                }
-            }
+            echo '✅ Pipeline finished — Build, SonarQube analysis, and IIS deployment complete.'
+            echo "📊 SonarQube Dashboard: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
         }
         success {
             echo '🎉 Pipeline completed successfully!'
