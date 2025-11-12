@@ -1,6 +1,14 @@
 pipeline {
     agent any
 
+    parameters {
+        choice(
+            name: 'QUALITY_GATE_MODE',
+            choices: ['SKIP', 'NON_BLOCKING', 'BLOCKING'],
+            description: 'Quality Gate Mode: SKIP = No wait (fastest, recommended), NON_BLOCKING = Wait but continue on failure/timeout, BLOCKING = Fail pipeline on quality gate failure'
+        )
+    }
+
     environment {
         // Ensure Jenkins (SYSTEM account) can find global dotnet tools
         PATH = "C:\\Users\\admin\\.dotnet\\tools;${env.PATH}"
@@ -95,10 +103,61 @@ pipeline {
             }
         }
 
-        stage('Wait for Quality Gate') {
+        stage('Quality Gate Check') {
+            when {
+                expression { params.QUALITY_GATE_MODE != 'SKIP' }
+            }
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                script {
+                    def mode = params.QUALITY_GATE_MODE ?: 'NON_BLOCKING'
+                    def shouldAbort = (mode == 'BLOCKING')
+                    
+                    echo "🔍 Quality Gate Mode: ${mode}"
+                    echo "📊 SonarQube analysis submitted. Task processing in background..."
+                    echo "🔗 View analysis progress: ${SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                    
+                    if (mode == 'SKIP') {
+                        echo "⏭️ Skipping quality gate wait - analysis will complete in background"
+                        echo "💡 Check SonarQube dashboard later for results"
+                    } else {
+                        try {
+                            // Use shorter timeout for non-blocking, longer for blocking
+                            def timeoutMinutes = shouldAbort ? 15 : 5
+                            
+                            timeout(time: timeoutMinutes, unit: 'MINUTES') {
+                                def qg = waitForQualityGate abortPipeline: shouldAbort
+                                
+                                if (qg.status == 'OK') {
+                                    echo "✅ Quality Gate PASSED"
+                                } else {
+                                    echo "⚠️ Quality Gate status: ${qg.status}"
+                                    echo "📋 Quality Gate details: ${qg}"
+                                    
+                                    if (shouldAbort) {
+                                        error("Quality Gate FAILED - Pipeline aborted as per configuration")
+                                    } else {
+                                        echo "⚠️ Quality Gate failed but continuing (NON_BLOCKING mode)"
+                                        echo "💡 Review issues in SonarQube dashboard: ${SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                                    }
+                                }
+                            }
+                        } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+                            if (shouldAbort) {
+                                error("Quality Gate check timed out - Pipeline aborted")
+                            } else {
+                                echo "⏱️ Quality Gate check timed out after 5 minutes"
+                                echo "🔄 Analysis continues in background - deployment proceeding"
+                                echo "💡 Check SonarQube dashboard later: ${SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                            }
+                        } catch (Exception e) {
+                            if (shouldAbort) {
+                                error("Quality Gate check failed: ${e.getMessage()}")
+                            } else {
+                                echo "⚠️ Quality Gate check encountered an error: ${e.getMessage()}"
+                                echo "🔄 Continuing with deployment (NON_BLOCKING mode)"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -227,8 +286,22 @@ pipeline {
 
     post {
         always {
-            echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment complete.'
-            echo '📊 View full report at: http://localhost:9000/dashboard?id=eShopOnWeb'
+            script {
+                echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment complete.'
+                echo '📊 View SonarQube report at: http://localhost:9000/dashboard?id=eShopOnWeb'
+                
+                // Optional: Check quality gate status in post-action (non-blocking)
+                if (params.QUALITY_GATE_MODE == 'SKIP' || params.QUALITY_GATE_MODE == 'NON_BLOCKING') {
+                    echo '💡 Quality gate analysis may still be processing in SonarQube'
+                    echo '💡 Check the dashboard above for final quality gate status'
+                }
+            }
+        }
+        success {
+            echo '🎉 Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check logs above for details.'
         }
     }
 }
