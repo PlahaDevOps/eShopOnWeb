@@ -87,8 +87,8 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    bat '''
-                        dotnet sonarscanner begin ^
+                    bat """
+                        call dotnet sonarscanner begin ^
                             /k:"eShopOnWeb" ^
                             /n:"eShopOnWeb" ^
                             /d:sonar.host.url=%SONAR_HOST_URL% ^
@@ -96,11 +96,11 @@ pipeline {
                             /d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml ^
                             /d:sonar.verbose=true
 
-                        dotnet build %SOLUTION% -c %BUILD_CONFIG%
+                        call dotnet build %SOLUTION% -c %BUILD_CONFIG%
 
-                        dotnet sonarscanner end ^
+                        call dotnet sonarscanner end ^
                             /d:sonar.login=%SONAR_TOKEN%
-                    '''
+                    """
                 }
             }
         }
@@ -144,21 +144,20 @@ pipeline {
 
         stage('Configure Staging Environment') {
             steps {
-                script {
-                    def stagingConfig = 'src\\Web\\appsettings.Staging.json'
-                    def defaultConfig = 'src\\Web\\appsettings.json'
-                    def targetPath = "${env.PUBLISH_DIR}\\appsettings.json"
-                    
-                    bat """
-                        if exist "${stagingConfig}" (
-                            copy /Y "${stagingConfig}" "${targetPath}"
-                            echo ✅ Staging config applied.
-                        ) else (
-                            copy /Y "${defaultConfig}" "${targetPath}"
-                            echo ⚠️ Using default appsettings.json
-                        )
-                    """
-                }
+                powershell '''
+                    $stagingConfig = "src/Web/appsettings.Staging.json"
+                    $defaultConfig = "src/Web/appsettings.json"
+                    $targetPath = "$env:PUBLISH_DIR\\appsettings.json"
+
+                    if (Test-Path $stagingConfig) {
+                        Copy-Item $stagingConfig $targetPath -Force
+                        Write-Host "✅ Staging config found and copied."
+                    }
+                    else {
+                        Copy-Item $defaultConfig $targetPath -Force
+                        Write-Host "⚠️ Using default appsettings.json"
+                    }
+                '''
             }
         }
 
