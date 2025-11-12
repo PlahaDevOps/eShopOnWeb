@@ -6,7 +6,7 @@ pipeline {
         SOLUTION = 'eShopOnWeb.sln'
         PUBLISH_DIR = 'publish'
 
-        // Paths and IIS app names
+        // IIS configuration
         STAGING_PATH = "C:\\inetpub\\eShopOnWeb-staging"
         PROD_PATH = "C:\\inetpub\\eShopOnWeb-production"
         STAGING_SITE = "eShopOnWeb-staging"
@@ -16,7 +16,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout Source Code') {
             steps {
                 checkout scm
@@ -37,13 +36,18 @@ pipeline {
 
         stage('Run Unit Tests') {
             steps {
-                bat 'dotnet test tests\\UnitTests\\UnitTests.csproj -c %BUILD_CONFIG%'
+                bat '''
+                    dotnet test tests\\UnitTests\\UnitTests.csproj ^
+                      /p:CollectCoverage=true ^
+                      /p:CoverletOutputFormat=opencover ^
+                      /p:CoverletOutput="tests\\UnitTests\\TestResults\\coverage"
+                '''
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('local-sonarqube') {
+                withSonarQubeEnv('SonarQube') {   // 👈 Must match your configured server name
                     bat '''
                         sonar-scanner ^
                         -Dsonar.projectKey=eShopOnWeb ^
@@ -187,7 +191,7 @@ pipeline {
 
     post {
         always {
-            echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment.'
+            echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment complete.'
         }
     }
 }
