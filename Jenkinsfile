@@ -192,9 +192,19 @@ pipeline {
                         Get-ChildItem $env:STAGING_PATH -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
                     }
                     Copy-Item "$env:PUBLISH_DIR\\*" $env:STAGING_PATH -Recurse -Force;
+                    
+                    # Set proper permissions for IIS App Pool
+                    $appPoolIdentity = "IIS APPPOOL\$appPool";
+                    icacls $env:STAGING_PATH /grant "${appPoolIdentity}:(RX)" /T /Q
+                    
+                    # Set ASPNETCORE_ENVIRONMENT for staging
+                    Set-WebConfigurationProperty -PSPath "IIS:\Sites\$env:STAGING_SITE" -Filter "system.webServer/aspNetCore/environmentVariables" -Name "." -Value @{name="ASPNETCORE_ENVIRONMENT";value="Staging"}
+                    
                     Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
                     Restart-WebAppPool -Name $appPool;
                     Start-Website -Name $env:STAGING_SITE -ErrorAction SilentlyContinue;
+                    Write-Host "✅ Deployment completed. Waiting for app to start...";
+                    Start-Sleep -Seconds 5;
                 '''
             }
         }
@@ -203,7 +213,28 @@ pipeline {
             steps {
                 powershell '''
                     $url = 'http://localhost:8081';
-                    Start-Sleep -Seconds 8;
+                    Write-Host "Waiting for application to start...";
+                    Start-Sleep -Seconds 10;
+                    
+                    # Check app pool status
+                    Import-Module WebAdministration -ErrorAction SilentlyContinue;
+                    $appPool = $env:STAGING_APPPOOL;
+                    $poolState = (Get-WebAppPoolState -Name $appPool).Value;
+                    Write-Host "App Pool State: $poolState";
+                    
+                    # Check application logs if available
+                    $logPath = "$env:STAGING_PATH\logs";
+                    if (Test-Path $logPath) {
+                        Write-Host "`n=== Recent Application Logs ===";
+                        $logFiles = Get-ChildItem $logPath -Filter "stdout*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
+                        if ($logFiles) {
+                            Write-Host "Last 30 lines from $($logFiles.Name):";
+                            Get-Content $logFiles.FullName -Tail 30 -ErrorAction SilentlyContinue;
+                        }
+                    }
+                    
+                    # Try to access the site
+                    Write-Host "`n=== Testing Site Access ===";
                     try {
                         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
                         if ($response.StatusCode -eq 200) {
@@ -212,7 +243,11 @@ pipeline {
                             Write-Host "⚠️ Staging returned HTTP $($response.StatusCode)";
                         }
                     } catch {
+                        $statusCode = $_.Exception.Response.StatusCode.value__;
                         Write-Host "❌ Staging verification failed: $($_.Exception.Message)";
+                        Write-Host "HTTP Status Code: $statusCode";
+                        Write-Host "`n💡 Check Event Viewer (Windows Logs > Application) for detailed error messages";
+                        Write-Host "💡 Or check application logs at: $logPath";
                     }
                 '''
             }
