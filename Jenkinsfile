@@ -86,9 +86,10 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    bat """
+                    bat '''
                         dotnet sonarscanner begin ^
                             /k:"eShopOnWeb" ^
+                            /n:"eShopOnWeb" ^
                             /d:sonar.host.url=%SONAR_HOST_URL% ^
                             /d:sonar.login=%SONAR_TOKEN% ^
                             /d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml ^
@@ -98,7 +99,7 @@ pipeline {
 
                         dotnet sonarscanner end ^
                             /d:sonar.login=%SONAR_TOKEN%
-                    """
+                    '''
                 }
             }
         }
@@ -171,16 +172,9 @@ pipeline {
 
         stage('Configure Staging Environment') {
             steps {
-                powershell '''
-                    $stagingConfig = 'src\\Web\\appsettings.Staging.json'
-                    $defaultConfig = 'src\\Web\\appsettings.json'
-                    $targetPath = Join-Path $env:PUBLISH_DIR 'appsettings.json'
-                    
-                    if (Test-Path $stagingConfig) {
-                        Copy-Item $stagingConfig $targetPath -Force
-                    } else {
-                        Copy-Item $defaultConfig $targetPath -Force
-                    }
+                bat '''
+                    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+                    "if (Test-Path 'src\\Web\\appsettings.Staging.json') { Copy-Item 'src\\Web\\appsettings.Staging.json' (Join-Path $env:PUBLISH_DIR 'appsettings.json') -Force; Write-Host '✅ Staging config found and copied.' } else { Copy-Item 'src\\Web\\appsettings.json' (Join-Path $env:PUBLISH_DIR 'appsettings.json') -Force; Write-Host '⚠️ Using default appsettings.json' }"
                 '''
             }
         }
