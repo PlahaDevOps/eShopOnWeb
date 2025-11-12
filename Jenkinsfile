@@ -16,7 +16,7 @@ pipeline {
 
         // SonarQube
         SONAR_HOST_URL = 'http://192.168.1.39:9000'
-        SONAR_TOKEN = credentials('sonarqube-token') // Jenkins secret text credential
+        SONAR_TOKEN = credentials('sonar-tak') // Jenkins secret text credential
     }
 
     stages {
