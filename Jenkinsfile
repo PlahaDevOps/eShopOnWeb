@@ -2,9 +2,6 @@ pipeline {
     agent any
 
     environment {
-        // Add SonarScanner global tool path
-        PATH = "C:\\Users\\admin\\.dotnet\\tools;${PATH}"
-
         BUILD_CONFIG = 'Release'
         SOLUTION = 'eShopOnWeb.sln'
         PUBLISH_DIR = 'publish'
@@ -17,12 +14,13 @@ pipeline {
         STAGING_APPPOOL = "eShopOnWeb-staging"
         PROD_APPPOOL = "eShopOnWeb-production"
 
-        // SonarQube
-        SONAR_HOST_URL = 'http://192.168.1.39:9000'
-        SONAR_TOKEN = credentials('sonar-tak')
+        // SonarQube configuration
+        SONAR_HOST_URL = 'http://localhost:9000'
+        SONAR_TOKEN = credentials('sonar-tak') // Jenkins secret text credential
     }
 
     stages {
+
         stage('Diagnostics') {
             steps {
                 echo "🔍 Checking environment..."
@@ -31,12 +29,10 @@ pipeline {
             }
         }
 
-        // ✅ Fixed stage
         stage('Check Tools') {
             steps {
-                echo "🧰 Checking installed SDKs and SonarScanner..."
+                echo "🧩 Checking installed SDKs and SonarScanner..."
                 bat 'dotnet --list-sdks'
-                // Ignore exit code 1 from version check
                 bat 'dotnet sonarscanner --version || exit 0'
                 echo "✅ Tools verified successfully."
             }
@@ -93,7 +89,7 @@ pipeline {
 
         stage('Wait for Quality Gate') {
             steps {
-                timeout(time: 2, unit: 'MINUTES') {
+                timeout(time: 5, unit: 'MINUTES') {   // ⏱ Increased from 2 → 5 minutes
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -113,7 +109,8 @@ pipeline {
                             Copy-Item 'src/Web/appsettings.Staging.json' '%PUBLISH_DIR%/appsettings.json' -Force
                         } else {
                             Copy-Item 'src/Web/appsettings.json' '%PUBLISH_DIR%/appsettings.json' -Force
-                        }"
+                        }
+                    "
                 '''
             }
         }
@@ -223,6 +220,7 @@ pipeline {
     post {
         always {
             echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment complete.'
+            echo '📊 View full report at: http://localhost:9000/dashboard?id=eShopOnWeb'
         }
     }
 }
