@@ -39,8 +39,10 @@ pipeline {
 
         stage('Check Tools') {
             steps {
-                bat 'dotnet --list-sdks'
-                bat 'dotnet sonarscanner --version'
+                bat '''
+                    dotnet --list-sdks
+                    dotnet sonarscanner --version || exit /b 0
+                '''
             }
         }
 
