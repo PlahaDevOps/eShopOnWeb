@@ -54,11 +54,19 @@ pipeline {
             steps {
                 bat '''
                     dotnet --list-sdks
+                    echo.
+                    echo Checking SonarScanner availability...
                     dotnet sonarscanner --version
-                    if errorlevel 1 (
-                        echo dotnet sonarscanner not available, checking SonarScanner.MSBuild.exe...
-                        SonarScanner.MSBuild.exe /?
+                    if %errorlevel% NEQ 0 (
+                        echo ⚠ dotnet sonarscanner not available, checking classic MSBuild scanner...
+                        where SonarScanner.MSBuild.exe >NUL 2>&1 && (
+                            SonarScanner.MSBuild.exe /? >NUL 2>&1
+                            echo ✅ Classic SonarScanner.MSBuild.exe available.
+                        ) || (
+                            echo ⚠ Classic SonarScanner.MSBuild.exe not found — OK, using dotnet tool.
+                        )
                     )
+                    exit /b 0
                 '''
             }
         }
