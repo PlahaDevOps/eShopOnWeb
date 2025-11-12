@@ -105,25 +105,26 @@ pipeline {
 
         stage('Quality Gate Check') {
             when {
-                expression { params.QUALITY_GATE_MODE != 'SKIP' }
+                expression { params?.QUALITY_GATE_MODE != 'SKIP' }
             }
             steps {
                 script {
-                    def mode = params.QUALITY_GATE_MODE ?: 'NON_BLOCKING'
-                    def shouldAbort = (mode == 'BLOCKING')
+                    // Get quality gate mode with default fallback
+                    String mode = params?.QUALITY_GATE_MODE ?: 'NON_BLOCKING'
+                    Boolean shouldAbort = (mode == 'BLOCKING')
                     
                     echo "🔍 Quality Gate Mode: ${mode}"
                     echo "📊 SonarQube analysis submitted. Task processing in background..."
-                    echo "🔗 View analysis progress: ${SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                    echo "🔗 View analysis progress: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
                     
                     if (mode == 'SKIP') {
                         echo "⏭️ Skipping quality gate wait - analysis will complete in background"
                         echo "💡 Check SonarQube dashboard later for results"
                     } else {
+                        // Use shorter timeout for non-blocking, longer for blocking
+                        Integer timeoutMinutes = shouldAbort ? 15 : 5
+                        
                         try {
-                            // Use shorter timeout for non-blocking, longer for blocking
-                            def timeoutMinutes = shouldAbort ? 15 : 5
-                            
                             timeout(time: timeoutMinutes, unit: 'MINUTES') {
                                 def qg = waitForQualityGate abortPipeline: shouldAbort
                                 
@@ -137,7 +138,7 @@ pipeline {
                                         error("Quality Gate FAILED - Pipeline aborted as per configuration")
                                     } else {
                                         echo "⚠️ Quality Gate failed but continuing (NON_BLOCKING mode)"
-                                        echo "💡 Review issues in SonarQube dashboard: ${SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                                        echo "💡 Review issues in SonarQube dashboard: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
                                     }
                                 }
                             }
@@ -145,15 +146,15 @@ pipeline {
                             if (shouldAbort) {
                                 error("Quality Gate check timed out - Pipeline aborted")
                             } else {
-                                echo "⏱️ Quality Gate check timed out after 5 minutes"
+                                echo "⏱️ Quality Gate check timed out after ${timeoutMinutes} minutes"
                                 echo "🔄 Analysis continues in background - deployment proceeding"
-                                echo "💡 Check SonarQube dashboard later: ${SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+                                echo "💡 Check SonarQube dashboard later: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
                             }
                         } catch (Exception e) {
                             if (shouldAbort) {
-                                error("Quality Gate check failed: ${e.getMessage()}")
+                                error("Quality Gate check failed: ${e.message}")
                             } else {
-                                echo "⚠️ Quality Gate check encountered an error: ${e.getMessage()}"
+                                echo "⚠️ Quality Gate check encountered an error: ${e.message}"
                                 echo "🔄 Continuing with deployment (NON_BLOCKING mode)"
                             }
                         }
@@ -170,59 +171,53 @@ pipeline {
 
         stage('Configure Staging Environment') {
             steps {
-                bat '''
-                    powershell -ExecutionPolicy Bypass -Command "
-                        if (Test-Path 'src/Web/appsettings.Staging.json') {
-                            Copy-Item 'src/Web/appsettings.Staging.json' '%PUBLISH_DIR%/appsettings.json' -Force
-                        } else {
-                            Copy-Item 'src/Web/appsettings.json' '%PUBLISH_DIR%/appsettings.json' -Force
-                        }
-                    "
+                powershell '''
+                    if (Test-Path 'src/Web/appsettings.Staging.json') {
+                        Copy-Item 'src/Web/appsettings.Staging.json' "$env:PUBLISH_DIR/appsettings.json" -Force
+                    } else {
+                        Copy-Item 'src/Web/appsettings.json' "$env:PUBLISH_DIR/appsettings.json" -Force
+                    }
                 '''
             }
         }
 
         stage('Clean and Deploy to Staging') {
             steps {
-                bat '''
-                    powershell -ExecutionPolicy Bypass -Command "
-                        Import-Module WebAdministration -ErrorAction SilentlyContinue;
-                        $appPool = '%STAGING_APPPOOL%';
-                        if (Test-Path ('IIS:\\AppPools\\' + $appPool)) {
-                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
-                            Start-Sleep -Seconds 5;
-                        }
-                        if (!(Test-Path '%STAGING_PATH%')) {
-                            New-Item -ItemType Directory -Path '%STAGING_PATH%' -Force | Out-Null;
-                        } else {
-                            Get-ChildItem '%STAGING_PATH%' -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
-                        }
-                        Copy-Item '%PUBLISH_DIR%\\*' '%STAGING_PATH%' -Recurse -Force;
-                        Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
-                        Restart-WebAppPool -Name $appPool;
-                        Start-Website -Name '%STAGING_SITE%' -ErrorAction SilentlyContinue;
-                    "
+                powershell '''
+                    Import-Module WebAdministration -ErrorAction SilentlyContinue;
+                    $appPool = $env:STAGING_APPPOOL;
+                    if (Test-Path ("IIS:\\AppPools\\" + $appPool)) {
+                        Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                        Start-Sleep -Seconds 5;
+                    }
+                    if (!(Test-Path $env:STAGING_PATH)) {
+                        New-Item -ItemType Directory -Path $env:STAGING_PATH -Force | Out-Null;
+                    } else {
+                        Get-ChildItem $env:STAGING_PATH -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
+                    }
+                    Copy-Item "$env:PUBLISH_DIR\\*" $env:STAGING_PATH -Recurse -Force;
+                    Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                    Restart-WebAppPool -Name $appPool;
+                    Start-Website -Name $env:STAGING_SITE -ErrorAction SilentlyContinue;
                 '''
             }
         }
 
         stage('Verify Staging Site') {
             steps {
-                bat '''
-                    powershell -ExecutionPolicy Bypass -Command "
-                        $url = 'http://localhost:8081';
-                        Start-Sleep -Seconds 8;
-                        try {
-                            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
-                            if ($response.StatusCode -eq 200) {
-                                Write-Host '✅ Staging is running correctly at' $url;
-                            } else {
-                                Write-Host '⚠️ Staging returned status:' $response.StatusCode;
-                            }
-                        } catch {
-                            Write-Host '❌ Staging verification failed:' $_.Exception.Message;
+                powershell '''
+                    $url = 'http://localhost:8081';
+                    Start-Sleep -Seconds 8;
+                    try {
+                        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
+                        if ($response.StatusCode -eq 200) {
+                            Write-Host '✅ Staging is running correctly at' $url;
+                        } else {
+                            Write-Host '⚠️ Staging returned status:' $response.StatusCode;
                         }
-                    "
+                    } catch {
+                        Write-Host '❌ Staging verification failed:' $_.Exception.Message;
+                    }
                 '''
             }
         }
@@ -235,50 +230,46 @@ pipeline {
 
         stage('Clean and Deploy to Production') {
             steps {
-                bat '''
-                    powershell -ExecutionPolicy Bypass -Command "
-                        Import-Module WebAdministration -ErrorAction SilentlyContinue;
-                        $appPool = '%PROD_APPPOOL%';
-                        if (Test-Path ('IIS:\\AppPools\\' + $appPool)) {
-                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
-                            Start-Sleep -Seconds 5;
-                        }
-                        if (!(Test-Path '%PROD_PATH%')) {
-                            New-Item -ItemType Directory -Path '%PROD_PATH%' -Force | Out-Null;
-                        } else {
-                            Get-ChildItem '%PROD_PATH%' -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
-                        }
-                        Copy-Item '%PUBLISH_DIR%\\*' '%PROD_PATH%' -Recurse -Force;
-                        if (Test-Path 'src/Web/appsettings.Production.json') {
-                            Copy-Item 'src/Web/appsettings.Production.json' '%PROD_PATH%/appsettings.json' -Force;
-                        } else {
-                            Copy-Item 'src/Web/appsettings.json' '%PROD_PATH%/appsettings.json' -Force;
-                        }
-                        Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
-                        Restart-WebAppPool -Name $appPool;
-                        Start-Website -Name '%PROD_SITE%' -ErrorAction SilentlyContinue;
-                    "
+                powershell '''
+                    Import-Module WebAdministration -ErrorAction SilentlyContinue;
+                    $appPool = $env:PROD_APPPOOL;
+                    if (Test-Path ("IIS:\\AppPools\\" + $appPool)) {
+                        Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                        Start-Sleep -Seconds 5;
+                    }
+                    if (!(Test-Path $env:PROD_PATH)) {
+                        New-Item -ItemType Directory -Path $env:PROD_PATH -Force | Out-Null;
+                    } else {
+                        Get-ChildItem $env:PROD_PATH -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
+                    }
+                    Copy-Item "$env:PUBLISH_DIR\\*" $env:PROD_PATH -Recurse -Force;
+                    if (Test-Path 'src/Web/appsettings.Production.json') {
+                        Copy-Item 'src/Web/appsettings.Production.json' "$env:PROD_PATH/appsettings.json" -Force;
+                    } else {
+                        Copy-Item 'src/Web/appsettings.json' "$env:PROD_PATH/appsettings.json" -Force;
+                    }
+                    Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                    Restart-WebAppPool -Name $appPool;
+                    Start-Website -Name $env:PROD_SITE -ErrorAction SilentlyContinue;
                 '''
             }
         }
 
         stage('Verify Production Site') {
             steps {
-                bat '''
-                    powershell -ExecutionPolicy Bypass -Command "
-                        $url = 'http://localhost:8080';
-                        Start-Sleep -Seconds 8;
-                        try {
-                            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
-                            if ($response.StatusCode -eq 200) {
-                                Write-Host '✅ Production is running correctly at' $url;
-                            } else {
-                                Write-Host '⚠️ Production returned status:' $response.StatusCode;
-                            }
-                        } catch {
-                            Write-Host '❌ Production verification failed:' $_.Exception.Message;
+                powershell '''
+                    $url = 'http://localhost:8080';
+                    Start-Sleep -Seconds 8;
+                    try {
+                        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
+                        if ($response.StatusCode -eq 200) {
+                            Write-Host '✅ Production is running correctly at' $url;
+                        } else {
+                            Write-Host '⚠️ Production returned status:' $response.StatusCode;
                         }
-                    "
+                    } catch {
+                        Write-Host '❌ Production verification failed:' $_.Exception.Message;
+                    }
                 '''
             }
         }
@@ -288,10 +279,11 @@ pipeline {
         always {
             script {
                 echo '✅ Pipeline finished — build + SonarQube analysis + IIS deployment complete.'
-                echo '📊 View SonarQube report at: http://localhost:9000/dashboard?id=eShopOnWeb'
+                echo "📊 View SonarQube report at: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
                 
                 // Optional: Check quality gate status in post-action (non-blocking)
-                if (params.QUALITY_GATE_MODE == 'SKIP' || params.QUALITY_GATE_MODE == 'NON_BLOCKING') {
+                String qualityGateMode = params?.QUALITY_GATE_MODE ?: 'SKIP'
+                if (qualityGateMode == 'SKIP' || qualityGateMode == 'NON_BLOCKING') {
                     echo '💡 Quality gate analysis may still be processing in SonarQube'
                     echo '💡 Check the dashboard above for final quality gate status'
                 }
