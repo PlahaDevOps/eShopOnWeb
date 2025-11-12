@@ -11,7 +11,207 @@ parameters:
 trigger: none  # Temporarily disabled while testing new pipeline
 
 pool:
-  name: Default
+  name: Defaultpipeline {
+    agent any
+
+    environment {
+        BUILD_CONFIG = 'Release'
+        SOLUTION = 'eShopOnWeb.sln'
+        PUBLISH_DIR = 'publish'
+        STAGING_ENV = 'staging'
+        PROD_ENV = 'production'
+        STAGING_PATH = "C:\\inetpub\\eShopOnWeb-staging"
+        PROD_PATH = "C:\\inetpub\\eShopOnWeb-production"
+        STAGING_SITE = "eShopOnWeb-staging"
+        PROD_SITE = "eShopOnWeb-production"
+        STAGING_APPPOOL = "eShopOnWeb-staging"
+        PROD_APPPOOL = "eShopOnWeb-production"
+    }
+
+    tools {
+        jdk 'JDK17' // ensure this matches your Jenkins global tool config
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Restore') {
+            steps {
+                bat 'dotnet restore %SOLUTION%'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG%'
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                bat 'dotnet test tests\\UnitTests\\UnitTests.csproj -c %BUILD_CONFIG%'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('local-sonarqube') {
+                    bat '''
+                        sonar-scanner ^
+                        -Dsonar.projectKey=eShopOnWeb ^
+                        -Dsonar.sources=src ^
+                        -Dsonar.cs.opencover.reportsPaths=**/coverage.opencover.xml ^
+                        -Dsonar.host.url=%SONAR_HOST_URL% ^
+                        -Dsonar.login=%SONAR_AUTH_TOKEN%
+                    '''
+                }
+            }
+        }
+
+        stage('Wait for Quality Gate') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                bat 'dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR%'
+            }
+        }
+
+        stage('Configure Staging Environment') {
+            steps {
+                bat '''
+                    powershell -ExecutionPolicy Bypass -Command "
+                        Write-Host 'Applying staging config...';
+                        if (Test-Path 'src/Web/appsettings.Staging.json') {
+                            Copy-Item 'src/Web/appsettings.Staging.json' '%PUBLISH_DIR%/appsettings.json' -Force
+                        } else {
+                            Copy-Item 'src/Web/appsettings.json' '%PUBLISH_DIR%/appsettings.json' -Force
+                        }"
+                '''
+            }
+        }
+
+        stage('Clean and Deploy to Staging') {
+            steps {
+                bat '''
+                    powershell -ExecutionPolicy Bypass -Command "
+                        Import-Module WebAdministration -ErrorAction SilentlyContinue;
+                        $appPool = '%STAGING_APPPOOL%';
+                        if (Test-Path 'IIS:\\AppPools\\' + $appPool) {
+                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Start-Sleep -Seconds 3;
+                        }
+                        if (!(Test-Path '%STAGING_PATH%')) {
+                            New-Item -ItemType Directory -Path '%STAGING_PATH%' -Force | Out-Null;
+                        } else {
+                            Get-ChildItem '%STAGING_PATH%' -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
+                        }
+                        Copy-Item '%PUBLISH_DIR%\\*' '%STAGING_PATH%' -Recurse -Force;
+                        Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                        Restart-WebAppPool -Name $appPool;
+                        Start-Website -Name '%STAGING_SITE%' -ErrorAction SilentlyContinue;
+                    "
+                '''
+            }
+        }
+
+        stage('Verify Staging') {
+            steps {
+                bat '''
+                    powershell -ExecutionPolicy Bypass -Command "
+                        $url = 'http://localhost:8081';
+                        Write-Host 'Verifying staging site...';
+                        Start-Sleep -Seconds 5;
+                        try {
+                            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
+                            if ($r.StatusCode -eq 200) {
+                                Write-Host '✅ Staging is up and running.';
+                            } else {
+                                Write-Host '⚠️ Staging returned status' $r.StatusCode;
+                            }
+                        } catch {
+                            Write-Host '❌ Staging verification failed: ' $_.Exception.Message;
+                        }
+                    "
+                '''
+            }
+        }
+
+        stage('Manual Approval for Production') {
+            steps {
+                input message: 'Promote to Production?', ok: 'Deploy'
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                bat '''
+                    powershell -ExecutionPolicy Bypass -Command "
+                        Import-Module WebAdministration -ErrorAction SilentlyContinue;
+                        $appPool = '%PROD_APPPOOL%';
+                        if (Test-Path 'IIS:\\AppPools\\' + $appPool) {
+                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Start-Sleep -Seconds 3;
+                        }
+                        if (!(Test-Path '%PROD_PATH%')) {
+                            New-Item -ItemType Directory -Path '%PROD_PATH%' -Force | Out-Null;
+                        } else {
+                            Get-ChildItem '%PROD_PATH%' -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
+                        }
+                        Copy-Item '%PUBLISH_DIR%\\*' '%PROD_PATH%' -Recurse -Force;
+                        if (Test-Path 'src/Web/appsettings.Production.json') {
+                            Copy-Item 'src/Web/appsettings.Production.json' '%PROD_PATH%/appsettings.json' -Force;
+                        } else {
+                            Copy-Item 'src/Web/appsettings.json' '%PROD_PATH%/appsettings.json' -Force;
+                        }
+                        Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                        Restart-WebAppPool -Name $appPool;
+                        Start-Website -Name '%PROD_SITE%' -ErrorAction SilentlyContinue;
+                    "
+                '''
+            }
+        }
+
+        stage('Verify Production') {
+            steps {
+                bat '''
+                    powershell -ExecutionPolicy Bypass -Command "
+                        $url = 'http://localhost:8080';
+                        Write-Host 'Verifying production site...';
+                        Start-Sleep -Seconds 5;
+                        try {
+                            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
+                            if ($r.StatusCode -eq 200) {
+                                Write-Host '✅ Production is up and running.';
+                            } else {
+                                Write-Host '⚠️ Production returned status' $r.StatusCode;
+                            }
+                        } catch {
+                            Write-Host '❌ Production verification failed: ' $_.Exception.Message;
+                        }
+                    "
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finished (build + Sonar + deploy).'
+        }
+    }
+}
+
 
 variables:
   solution: 'eShopOnWeb.sln'
