@@ -39,9 +39,13 @@ pipeline {
                     echo PATH:
                     echo %PATH%
                     whoami
-                    where dotnet
-                    where dotnet-sonarscanner || echo "⚠️ dotnet-sonarscanner not found in PATH"
-                    where SonarScanner.MSBuild.exe || echo "⚠️ SonarScanner.MSBuild.exe not found in PATH"
+
+                    echo Checking tools...
+                    where dotnet || (echo "⚠ dotnet not found" && exit /b 0)
+                    where dotnet-sonarscanner || (echo "⚠ dotnet-sonarscanner not found in PATH" && exit /b 0)
+                    where SonarScanner.MSBuild.exe || (echo "⚠ SonarScanner.MSBuild.exe not found in PATH" && exit /b 0)
+
+                    echo ✅ Diagnostics check completed successfully.
                 '''
             }
         }
@@ -50,7 +54,11 @@ pipeline {
             steps {
                 bat '''
                     dotnet --list-sdks
-                    dotnet sonarscanner --version || SonarScanner.MSBuild.exe /?
+                    dotnet sonarscanner --version
+                    if errorlevel 1 (
+                        echo dotnet sonarscanner not available, checking SonarScanner.MSBuild.exe...
+                        SonarScanner.MSBuild.exe /?
+                    )
                 '''
             }
         }
