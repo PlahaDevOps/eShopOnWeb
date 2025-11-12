@@ -226,7 +226,7 @@ pipeline {
                     Write-Host "App Pool State: $poolState";
                     
                     # Check application logs if available
-                    $logPath = "$env:STAGING_PATH\logs";
+                    $logPath = Join-Path $env:STAGING_PATH "logs";
                     if (Test-Path $logPath) {
                         Write-Host "`n=== Recent Application Logs ===";
                         $logFiles = Get-ChildItem $logPath -Filter "stdout*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1;
