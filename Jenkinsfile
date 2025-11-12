@@ -197,8 +197,11 @@ pipeline {
                     $appPoolIdentity = "IIS APPPOOL\$appPool";
                     icacls $env:STAGING_PATH /grant "${appPoolIdentity}:(RX)" /T /Q
                     
-                    # Set ASPNETCORE_ENVIRONMENT for staging
-                    Set-WebConfigurationProperty -PSPath "IIS:\Sites\$env:STAGING_SITE" -Filter "system.webServer/aspNetCore/environmentVariables" -Name "." -Value @{name="ASPNETCORE_ENVIRONMENT";value="Staging"}
+                    # Set ASPNETCORE_ENVIRONMENT for staging (using web.config or app pool environment)
+                    $sitePath = "IIS:\\Sites\\$env:STAGING_SITE";
+                    if (Test-Path $sitePath) {
+                        Set-WebConfigurationProperty -PSPath $sitePath -Filter "system.webServer/aspNetCore/environmentVariables" -Name "." -Value @{name="ASPNETCORE_ENVIRONMENT";value="Staging"} -ErrorAction SilentlyContinue;
+                    }
                     
                     Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
                     Restart-WebAppPool -Name $appPool;
