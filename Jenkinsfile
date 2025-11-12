@@ -13,9 +13,20 @@ pipeline {
         PROD_SITE = "eShopOnWeb-production"
         STAGING_APPPOOL = "eShopOnWeb-staging"
         PROD_APPPOOL = "eShopOnWeb-production"
+
+        // SonarQube
+        SONAR_HOST_URL = 'http://192.168.1.39:9000'
+        SONAR_TOKEN = credentials('sonarqube-token') // Jenkins secret text credential
     }
 
     stages {
+        stage('Check Tools') {
+            steps {
+                bat 'dotnet --list-sdks'
+                bat 'dotnet sonarscanner --version'
+            }
+        }
+
         stage('Checkout Source Code') {
             steps {
                 checkout scm
@@ -45,17 +56,23 @@ pipeline {
             }
         }
 
+        // ✅ Updated SonarQube Analysis for .NET
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {   // 👈 Must match your configured server name
-                    bat '''
-                        sonar-scanner ^
-                        -Dsonar.projectKey=eShopOnWeb ^
-                        -Dsonar.sources=src ^
-                        -Dsonar.cs.opencover.reportsPaths=**/coverage.opencover.xml ^
-                        -Dsonar.host.url=%SONAR_HOST_URL% ^
-                        -Dsonar.login=%SONAR_AUTH_TOKEN%
-                    '''
+                withSonarQubeEnv('SonarQube') {
+                    bat """
+                        dotnet sonarscanner begin ^
+                            /k:"eShopOnWeb" ^
+                            /d:sonar.host.url=%SONAR_HOST_URL% ^
+                            /d:sonar.login=%SONAR_TOKEN% ^
+                            /d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml ^
+                            /d:sonar.verbose=true
+
+                        dotnet build %SOLUTION% -c %BUILD_CONFIG%
+
+                        dotnet sonarscanner end ^
+                            /d:sonar.login=%SONAR_TOKEN%
+                    """
                 }
             }
         }
@@ -82,7 +99,8 @@ pipeline {
                             Copy-Item 'src/Web/appsettings.Staging.json' '%PUBLISH_DIR%/appsettings.json' -Force
                         } else {
                             Copy-Item 'src/Web/appsettings.json' '%PUBLISH_DIR%/appsettings.json' -Force
-                        }"
+                        }
+                    "
                 '''
             }
         }
