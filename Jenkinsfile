@@ -2,6 +2,9 @@ pipeline {
     agent any
 
     environment {
+        // Ensure Jenkins (SYSTEM account) can find global dotnet tools
+        PATH = "C:\\Users\\admin\\.dotnet\\tools;${env.PATH}"
+
         BUILD_CONFIG = 'Release'
         SOLUTION = 'eShopOnWeb.sln'
         PUBLISH_DIR = 'publish'
@@ -14,27 +17,30 @@ pipeline {
         STAGING_APPPOOL = "eShopOnWeb-staging"
         PROD_APPPOOL = "eShopOnWeb-production"
 
-        // SonarQube configuration
+        // SonarQube
         SONAR_HOST_URL = 'http://localhost:9000'
-        SONAR_TOKEN = credentials('sonar-tak') // Jenkins secret text credential
+        SONAR_TOKEN = credentials('sonar-tak')
     }
 
     stages {
 
         stage('Diagnostics') {
             steps {
-                echo "🔍 Checking environment..."
-                bat 'echo PATH: %PATH%'
-                bat 'whoami'
+                echo 'Current PATH and User Context:'
+                bat '''
+                    echo PATH:
+                    echo %PATH%
+                    whoami
+                    where dotnet
+                    where dotnet-sonarscanner || echo "⚠️ dotnet-sonarscanner not found in PATH"
+                '''
             }
         }
 
         stage('Check Tools') {
             steps {
-                echo "🧩 Checking installed SDKs and SonarScanner..."
                 bat 'dotnet --list-sdks'
-                bat 'dotnet sonarscanner --version || exit 0'
-                echo "✅ Tools verified successfully."
+                bat 'dotnet sonarscanner --version'
             }
         }
 
@@ -89,7 +95,7 @@ pipeline {
 
         stage('Wait for Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {   // ⏱ Increased from 2 → 5 minutes
+                timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -144,7 +150,7 @@ pipeline {
                 bat '''
                     powershell -ExecutionPolicy Bypass -Command "
                         $url = 'http://localhost:8081';
-                        Start-Sleep -Seconds 5;
+                        Start-Sleep -Seconds 8;
                         try {
                             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
                             if ($response.StatusCode -eq 200) {
@@ -200,7 +206,7 @@ pipeline {
                 bat '''
                     powershell -ExecutionPolicy Bypass -Command "
                         $url = 'http://localhost:8080';
-                        Start-Sleep -Seconds 5;
+                        Start-Sleep -Seconds 8;
                         try {
                             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;
                             if ($response.StatusCode -eq 200) {
