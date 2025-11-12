@@ -172,10 +172,14 @@ pipeline {
         stage('Configure Staging Environment') {
             steps {
                 powershell '''
-                    if (Test-Path 'src/Web/appsettings.Staging.json') {
-                        Copy-Item 'src/Web/appsettings.Staging.json' "$env:PUBLISH_DIR/appsettings.json" -Force
+                    $stagingConfig = 'src\\Web\\appsettings.Staging.json'
+                    $defaultConfig = 'src\\Web\\appsettings.json'
+                    $targetPath = Join-Path $env:PUBLISH_DIR 'appsettings.json'
+                    
+                    if (Test-Path $stagingConfig) {
+                        Copy-Item $stagingConfig $targetPath -Force
                     } else {
-                        Copy-Item 'src/Web/appsettings.json' "$env:PUBLISH_DIR/appsettings.json" -Force
+                        Copy-Item $defaultConfig $targetPath -Force
                     }
                 '''
             }
