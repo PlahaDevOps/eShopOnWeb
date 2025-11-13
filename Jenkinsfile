@@ -5,44 +5,37 @@ pipeline {
         choice(
             name: 'QUALITY_GATE_MODE',
             choices: ['SKIP', 'NON_BLOCKING', 'BLOCKING'],
-            description: 'Quality Gate: SKIP = no wait, NON_BLOCKING = wait but continue, BLOCKING = fail pipeline on bad gate'
+            description: 'Quality gate behavior'
         )
     }
 
     environment {
-        // Make sure dotnet global tools (sonarscanner) are available
-        PATH = "C:\\Users\\admin\\.dotnet\\tools;${env.PATH}"
-
         BUILD_CONFIG = 'Release'
         SOLUTION = 'eShopOnWeb.sln'
         PUBLISH_DIR = 'publish'
 
-        // IIS paths and names
         STAGING_PATH   = "C:\\inetpub\\eShopOnWeb-staging"
-        PROD_PATH      = "C:\\inetpub\\eShopOnWeb-production"
         STAGING_SITE   = "eShopOnWeb-staging"
-        PROD_SITE      = "eShopOnWeb-production"
         STAGING_APPPOOL = "eShopOnWeb-staging"
-        PROD_APPPOOL    = "eShopOnWeb-production"
 
-        // SonarQube
+        PROD_PATH   = "C:\\inetpub\\eShopOnWeb-production"
+        PROD_SITE   = "eShopOnWeb-production"
+        PROD_APPPOOL = "eShopOnWeb-production"
+
         SONAR_HOST_URL = 'http://localhost:9000'
-        SONAR_TOKEN    = credentials('sonar-tak')
+        SONAR_TOKEN = credentials('sonar-tak')
     }
 
     stages {
 
         stage('Diagnostics') {
             steps {
-                echo 'Diagnostics: PATH and tools'
                 bat '''
+                    echo ===== DIAGNOSTICS =====
                     echo PATH:
                     echo %PATH%
-                    whoami
-
-                    echo Checking dotnet and sonarscanner...
                     where dotnet
-                    where dotnet-sonarscanner || echo dotnet-sonarscanner not found in PATH
+                    where msbuild.exe || echo MSBuild not found (OK for SDK-style)
                 '''
             }
         }
@@ -55,9 +48,7 @@ pipeline {
                             checkout scm
                         }
                     } catch (Exception e) {
-                        echo "Checkout failed: ${e.message}"
-                        echo "This might be a network issue. Try running the pipeline again."
-                        error "Checkout stage failed: ${e.message}"
+                        error "Checkout failed: ${e.message}"
                     }
                 }
             }
@@ -66,15 +57,10 @@ pipeline {
         stage('Restore') {
             steps {
                 bat '''
-                    echo Setting up MSBuild environment...
-                    if not exist "C:\\Windows\\SystemTemp\\MSBuildTemp" mkdir "C:\\Windows\\SystemTemp\\MSBuildTemp"
-                    
-                    echo Cleaning NuGet cache and temp files...
+                    echo Cleaning NuGet cache...
                     dotnet nuget locals all --clear
-                    if exist "%TEMP%\\MSBuildTemp" rmdir /s /q "%TEMP%\\MSBuildTemp" 2>nul
-                    if exist "%LOCALAPPDATA%\\Temp\\MSBuildTemp" rmdir /s /q "%LOCALAPPDATA%\\Temp\\MSBuildTemp" 2>nul
-                    
-                    echo Restoring packages (single-threaded to avoid MSBuild node crashes)...
+
+                    echo Restoring solution...
                     dotnet restore %SOLUTION% --verbosity minimal /maxcpucount:1
                 '''
             }
@@ -82,7 +68,7 @@ pipeline {
 
         stage('Build') {
             steps {
-                bat "dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG%"
+                bat "dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore"
             }
         }
 
@@ -90,9 +76,10 @@ pipeline {
             steps {
                 bat '''
                     dotnet test tests\\UnitTests\\UnitTests.csproj ^
-                      /p:CollectCoverage=true ^
-                      /p:CoverletOutputFormat=opencover ^
-                      /p:CoverletOutput="tests\\UnitTests\\TestResults\\coverage"
+                        /p:CollectCoverage=true ^
+                        /p:CoverletOutputFormat=opencover ^
+                        /p:CoverletOutput="coverage.opencover.xml" ^
+                        --logger trx
                 '''
             }
         }
@@ -101,17 +88,21 @@ pipeline {
             steps {
                 withSonarQubeEnv('SonarQube') {
                     bat """
-                        call dotnet sonarscanner begin ^
+                        echo ===== SONARQUBE BEGIN =====
+                        "%SONAR_SCANNER_MSBUILD_HOME%\\SonarScanner.MSBuild.exe" begin ^
                             /k:"eShopOnWeb" ^
                             /n:"eShopOnWeb" ^
+                            /v:"1.0.0" ^
                             /d:sonar.host.url=%SONAR_HOST_URL% ^
                             /d:sonar.login=%SONAR_TOKEN% ^
-                            /d:sonar.cs.opencover.reportsPaths=**/coverage.opencover.xml ^
-                            /d:sonar.verbose=true
+                            /d:sonar.verbose=true ^
+                            /d:sonar.cs.opencover.reportsPaths=**\\coverage.opencover.xml
 
-                        call dotnet build %SOLUTION% -c %BUILD_CONFIG%
+                        echo ===== BUILD FOR SONAR =====
+                        dotnet build %SOLUTION% -c %BUILD_CONFIG% /v:minimal
 
-                        call dotnet sonarscanner end ^
+                        echo ===== SONARQUBE END =====
+                        "%SONAR_SCANNER_MSBUILD_HOME%\\SonarScanner.MSBuild.exe" end ^
                             /d:sonar.login=%SONAR_TOKEN%
                     """
                 }
@@ -119,35 +110,26 @@ pipeline {
         }
 
         stage('Quality Gate') {
-            when {
-                expression { params?.QUALITY_GATE_MODE != 'SKIP' }
-            }
+            when { expression { params.QUALITY_GATE_MODE != 'SKIP' } }
             steps {
                 script {
-                    String mode = params?.QUALITY_GATE_MODE ?: 'NON_BLOCKING'
-                    boolean blocking = (mode == 'BLOCKING')
-
-                    echo "Quality gate mode: ${mode}"
-                    echo "SonarQube dashboard: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
-
+                    boolean blocking = (params.QUALITY_GATE_MODE == 'BLOCKING')
                     int timeoutMinutes = blocking ? 15 : 5
 
                     try {
                         timeout(time: timeoutMinutes, unit: 'MINUTES') {
                             def qg = waitForQualityGate abortPipeline: blocking
-                            if (qg.status == 'OK') {
-                                echo "Quality gate passed"
-                            } else if (blocking) {
-                                error "Quality gate failed: ${qg.status}"
-                            } else {
-                                echo "Quality gate status: ${qg.status} (non-blocking, continuing)"
+                            echo "Quality Gate Status: ${qg.status}"
+
+                            if (!blocking) {
+                                echo "Non-blocking mode; continuing even if gate failed."
                             }
                         }
                     } catch (Exception e) {
                         if (blocking) {
-                            error "Quality gate check failed: ${e.message}"
+                            error "Quality Gate failed: ${e.message}"
                         } else {
-                            echo "Quality gate check issue (non-blocking): ${e.message}"
+                            echo "Non-blocking: ${e.message}"
                         }
                     }
                 }
@@ -165,14 +147,14 @@ pipeline {
                 powershell '''
                     $stagingConfig = "src/Web/appsettings.Staging.json"
                     $defaultConfig = "src/Web/appsettings.json"
-                    $targetPath = "$env:PUBLISH_DIR\\appsettings.json"
+                    $target = "$env:PUBLISH_DIR\\appsettings.json"
 
                     if (Test-Path $stagingConfig) {
-                        Copy-Item $stagingConfig $targetPath -Force
-                        Write-Host "Staging config applied."
+                        Copy-Item $stagingConfig $target -Force
+                        Write-Host "Applied Staging configuration."
                     } else {
-                        Copy-Item $defaultConfig $targetPath -Force
-                        Write-Host "Staging config not found. Using default appsettings.json."
+                        Copy-Item $defaultConfig $target -Force
+                        Write-Host "Using default appsettings.json."
                     }
                 '''
             }
@@ -183,63 +165,48 @@ pipeline {
                 powershell '''
                     Import-Module WebAdministration -ErrorAction SilentlyContinue
 
-                    $publishPath = "$env:WORKSPACE\\$env:PUBLISH_DIR"
-                    $sitePath    = $env:STAGING_PATH
-                    $appPool     = $env:STAGING_APPPOOL
-                    $siteName    = $env:STAGING_SITE
+                    $publish = "$env:WORKSPACE\\$env:PUBLISH_DIR"
+                    $sitePath = $env:STAGING_PATH
+                    $pool = $env:STAGING_APPPOOL
+                    $site = $env:STAGING_SITE
 
-                    Write-Host "Publish path: $publishPath"
-                    Write-Host "Staging path: $sitePath"
-
-                    if (!(Test-Path $publishPath)) {
-                        Write-Host "ERROR: Publish directory does not exist: $publishPath"
-                        exit 1
-                    }
+                    Write-Host "Deploying to: $sitePath"
 
                     if (!(Test-Path $sitePath)) {
-                        New-Item -ItemType Directory -Path $sitePath -Force | Out-Null
+                        New-Item -ItemType Directory -Path $sitePath -Force
                     } else {
                         Get-ChildItem $sitePath -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue
                     }
 
-                    Copy-Item "$publishPath\\*" $sitePath -Recurse -Force
-                    Write-Host "Files copied to staging path."
+                    Copy-Item "$publish\\*" $sitePath -Recurse -Force
 
-                    # Create logs folder and set permissions
-                    $logsPath = "$sitePath\\logs"
-                    if (!(Test-Path $logsPath)) {
-                        New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
-                        Write-Host "Created logs folder: $logsPath"
+                    # Logs folder
+                    $logs = "$sitePath\\logs"
+                    if (!(Test-Path $logs)) { New-Item -ItemType Directory -Path $logs -Force }
+
+                    # App Pool
+                    if (!(Test-Path "IIS:\\AppPools\\$pool")) {
+                        New-WebAppPool $pool
                     }
+                    Stop-WebAppPool $pool -ErrorAction SilentlyContinue
+                    Set-ItemProperty "IIS:\\AppPools\\$pool" -Name processModel.identityType -Value ApplicationPoolIdentity
 
-                    if (Test-Path "IIS:\\AppPools\\$appPool") {
-                        Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
+                    # Website
+                    if (!(Get-Website -Name $site -ErrorAction SilentlyContinue)) {
+                        New-Website -Name $site -Port 8081 -PhysicalPath $sitePath -ApplicationPool $pool
                     } else {
-                        New-WebAppPool -Name $appPool | Out-Null
+                        Set-ItemProperty "IIS:\\Sites\\$site" -Name physicalPath -Value $sitePath
                     }
 
-                    Set-ItemProperty "IIS:\\AppPools\\$appPool" -Name managedRuntimeVersion -Value ""
-                    Set-ItemProperty "IIS:\\AppPools\\$appPool" -Name processModel.identityType -Value "ApplicationPoolIdentity"
+                    # Permissions
+                    $identity = "IIS APPPOOL\\$pool"
+                    icacls $sitePath /grant "$identity:(OI)(CI)(M)" /T /Q
+                    icacls $logs /grant "$identity:(OI)(CI)(M)" /T /Q
 
-                    if (Get-Website -Name $siteName -ErrorAction SilentlyContinue) {
-                        Set-ItemProperty "IIS:\\Sites\\$siteName" -Name physicalPath -Value $sitePath
-                        Set-ItemProperty "IIS:\\Sites\\$siteName" -Name applicationPool -Value $appPool
-                    } else {
-                        New-Website -Name $siteName -PhysicalPath $sitePath -ApplicationPool $appPool -Port 8081 -Force | Out-Null
-                    }
+                    Restart-WebAppPool $pool
+                    Start-Website $site -ErrorAction SilentlyContinue
 
-                    # Set permissions for app pool identity
-                    $identity = "IIS APPPOOL\\$appPool"
-                    $grantArg = "${identity}:(OI)(CI)(M)"
-                    icacls $sitePath /grant $grantArg /T /Q
-                    icacls $logsPath /grant $grantArg /T /Q
-                    Write-Host "Permissions set for app pool identity: $identity"
-
-                    Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-                    Restart-WebAppPool -Name $appPool
-                    Start-Website -Name $siteName -ErrorAction SilentlyContinue
-
-                    Write-Host "Staging deployment completed."
+                    Write-Host "Staging deployment complete."
                 '''
             }
         }
@@ -248,61 +215,46 @@ pipeline {
             steps {
                 powershell '''
                     $url = "http://localhost:8081"
-                    $sitePath = $env:STAGING_PATH
-                    $logsPath = "$sitePath\\logs"
-                    
-                    Write-Host "Waiting for application to start..."
+                    $logs = "$env:STAGING_PATH\\logs"
+
                     Start-Sleep -Seconds 10
-                    
-                    # Check app pool status
-                    Import-Module WebAdministration -ErrorAction SilentlyContinue
-                    $appPool = $env:STAGING_APPPOOL
-                    $poolState = (Get-WebAppPoolState -Name $appPool -ErrorAction SilentlyContinue).Value
+
+                    Write-Host "Checking App Pool..."
+                    $poolState = (Get-WebAppPoolState $env:STAGING_APPPOOL).Value
                     Write-Host "App Pool State: $poolState"
-                    
-                    # Check for log files
-                    if (Test-Path $logsPath) {
-                        $logFiles = Get-ChildItem $logsPath -Filter "stdout*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
-                        if ($logFiles) {
-                            Write-Host "Found $($logFiles.Count) log file(s). Latest: $($logFiles[0].Name)"
-                            Write-Host "Last 20 lines of latest log:"
-                            Get-Content $logFiles[0].FullName -Tail 20 -ErrorAction SilentlyContinue
+
+                    if (Test-Path $logs) {
+                        $file = Get-ChildItem $logs -Filter "stdout*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($file) {
+                            Write-Host "======= Last log file: $($file.Name) ======="
+                            Get-Content $file.FullName -Tail 20
                         } else {
-                            Write-Host "No log files found in $logsPath"
+                            Write-Host "No logs found."
                         }
-                    } else {
-                        Write-Host "Logs folder does not exist: $logsPath"
                     }
-                    
-                    # Try to access the site
+
+                    Write-Host "Checking website..."
                     try {
-                        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
-                        if ($response.StatusCode -eq 200) {
-                            Write-Host "SUCCESS: Staging is running correctly at $url"
+                        $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
+                        if ($res.StatusCode -eq 200) {
+                            Write-Host "Staging is RUNNING OK."
                         } else {
-                            Write-Host "WARNING: Staging returned status code $($response.StatusCode)"
+                            Write-Host "Unexpected status: $($res.StatusCode)"
                         }
                     } catch {
-                        Write-Host "ERROR: Staging verification failed: $($_.Exception.Message)"
-                        Write-Host "Check Event Viewer (Windows Logs > Application) for detailed errors"
-                        Write-Host "Check logs folder at: $logsPath"
+                        Write-Host "Staging ERROR: $($_.Exception.Message)"
                     }
                 '''
             }
         }
-
     }
 
     post {
         always {
-            echo 'Pipeline finished.'
-            echo "SonarQube Dashboard: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
+            echo "Pipeline finished."
+            echo "SonarQube: ${env.SONAR_HOST_URL}/dashboard?id=eShopOnWeb"
         }
-        success {
-            echo 'Pipeline succeeded.'
-        }
-        failure {
-            echo 'Pipeline failed.'
-        }
+        success { echo "Pipeline succeeded!" }
+        failure { echo "Pipeline FAILED." }
     }
 }
