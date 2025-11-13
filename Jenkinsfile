@@ -31,16 +31,18 @@ pipeline {
         stage('Diagnostics') {
             steps {
                 bat '''
+                    @echo off
                     echo ===== DIAGNOSTICS =====
                     echo PATH:
                     echo %PATH%
                     where dotnet
                     where msbuild.exe >nul 2>&1
-                    if errorlevel 1 (
-                        echo MSBuild not found (OK for SDK-style)
-                    ) else (
+                    if %errorlevel% equ 0 (
                         echo MSBuild found
+                    ) else (
+                        echo MSBuild not found (OK for SDK-style)
                     )
+                    exit /b 0
                 '''
             }
         }
