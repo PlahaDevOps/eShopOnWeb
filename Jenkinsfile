@@ -35,7 +35,12 @@ pipeline {
                     echo PATH:
                     echo %PATH%
                     where dotnet
-                    where msbuild.exe || echo MSBuild not found (OK for SDK-style)
+                    where msbuild.exe >nul 2>&1
+                    if errorlevel 1 (
+                        echo MSBuild not found (OK for SDK-style)
+                    ) else (
+                        echo MSBuild found
+                    )
                 '''
             }
         }
@@ -87,24 +92,28 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    bat """
-                        echo ===== SONARQUBE BEGIN =====
-                        "%SONAR_SCANNER_MSBUILD_HOME%\\SonarScanner.MSBuild.exe" begin ^
-                            /k:"eShopOnWeb" ^
-                            /n:"eShopOnWeb" ^
-                            /v:"1.0.0" ^
-                            /d:sonar.host.url=%SONAR_HOST_URL% ^
-                            /d:sonar.login=%SONAR_TOKEN% ^
-                            /d:sonar.verbose=true ^
-                            /d:sonar.cs.opencover.reportsPaths=**\\coverage.opencover.xml
-
-                        echo ===== BUILD FOR SONAR =====
-                        dotnet build %SOLUTION% -c %BUILD_CONFIG% /v:minimal
-
-                        echo ===== SONARQUBE END =====
-                        "%SONAR_SCANNER_MSBUILD_HOME%\\SonarScanner.MSBuild.exe" end ^
-                            /d:sonar.login=%SONAR_TOKEN%
-                    """
+                    script {
+                        // Resolve installed MSBuild scanner path
+                        def scannerHome = tool 'SonarScannerMSBuild'
+                        
+                        bat """
+                            echo === SONAR BEGIN ===
+                            "${scannerHome}\\SonarScanner.MSBuild.exe" begin ^
+                                /k:"eShopOnWeb" ^
+                                /n:"eShopOnWeb" ^
+                                /d:sonar.host.url=%SONAR_HOST_URL% ^
+                                /d:sonar.login=%SONAR_TOKEN% ^
+                                /d:sonar.cs.opencover.reportsPaths=**\\coverage.opencover.xml ^
+                                /d:sonar.verbose=true
+                            
+                            echo === BUILDING SOLUTION ===
+                            dotnet build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
+                            
+                            echo === SONAR END ===
+                            "${scannerHome}\\SonarScanner.MSBuild.exe" end ^
+                                /d:sonar.login=%SONAR_TOKEN%
+                        """
+                    }
                 }
             }
         }
