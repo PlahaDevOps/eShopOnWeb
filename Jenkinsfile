@@ -4,13 +4,17 @@ pipeline {
     environment {
         DOTNET_ROOT = "C:\\Program Files\\dotnet"
         PATH = "C:\\Users\\admin\\.dotnet\\tools;C:\\SonarScanner;${env.PATH}"
+
+        PROJECT = "eShopOnWeb"
         SOLUTION = "eShopOnWeb.sln"
-        PROJECT = "src\\Web\\Web.csproj"
+
         PUBLISH_DIR = "${WORKSPACE}\\publish"
+
         STAGING_DIR = "C:\\inetpub\\eShopOnWeb-staging"
         STAGING_POOL = "eShopOnWeb-staging"
-        SONAR_HOST = "http://localhost:9000"
-        SONAR_PROJECT = "eShopOnWeb"
+
+        PROD_DIR = "C:\\inetpub\\eShopOnWeb"
+        PROD_POOL = "eShopOnWeb"
     }
 
     stages {
@@ -19,7 +23,7 @@ pipeline {
             steps {
                 powershell '''
                     Write-Host "Cleaning workspace..."
-                    Get-ChildItem -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                    Remove-Item -Recurse -Force "$env:WORKSPACE\\publish" -ErrorAction SilentlyContinue
                 '''
             }
         }
@@ -27,62 +31,59 @@ pipeline {
         stage('Diagnostics') {
             steps {
                 powershell '''
-                    Write-Host "Workspace: $env:WORKSPACE"
-                    Write-Host ".NET Version:"
+                    Write-Host "Dotnet Version:"
                     dotnet --version
-                '''
-            }
-        }
 
-        stage('Check Tools') {
-            steps {
-                powershell '''
-                    Write-Host "Checking SonarScanner..."
-                    where.exe SonarScanner.MSBuild.exe
+                    Write-Host "SonarScanner:"
+                    SonarScanner.MSBuild.exe /version
                 '''
-            }
-        }
-
-        stage('Checkout Source Code') {
-            steps {
-                git branch: 'main',
-                    url: 'https://github.com/PlahaDevOps/eShopOnWeb.git',
-                    credentialsId: 'git-pat'
             }
         }
 
         stage('Restore Packages') {
             steps {
-                powershell "dotnet restore ${env.SOLUTION}"
+                powershell '''
+                    dotnet restore "$env:SOLUTION"
+                '''
             }
         }
 
         stage('Build Project') {
             steps {
-                powershell "dotnet build ${env.SOLUTION} -c Release --no-restore"
+                powershell '''
+                    dotnet build "$env:SOLUTION" -c Release --no-restore
+                '''
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                powershell '''
+                    dotnet test "$env:SOLUTION" --no-build
+                '''
             }
         }
 
         stage('SonarQube Analysis') {
+            when {
+                expression { return env.SONAR_TOKEN?.trim() }
+            }
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    powershell """
-                        SonarScanner.MSBuild.exe begin /k:${env.SONAR_PROJECT} /d:sonar.host.url=${env.SONAR_HOST} /d:sonar.login=$env:SONAR_TOKEN
-                        dotnet build ${env.SOLUTION} -c Release
+                withSonarQubeEnv('sonarqube') {
+                    powershell '''
+                        SonarScanner.MSBuild.exe begin /k:"eShopOnWeb" /d:sonar.host.url=http://localhost:9000 /d:sonar.login=$env:SONAR_TOKEN
+                        dotnet build "$env:SOLUTION" -c Release
                         SonarScanner.MSBuild.exe end /d:sonar.login=$env:SONAR_TOKEN
-                    """
+                    '''
                 }
             }
         }
 
         stage('Publish Project') {
             steps {
-                powershell """
-                    if (Test-Path '${env:PUBLISH_DIR}') {
-                        Remove-Item '${env:PUBLISH_DIR}' -Recurse -Force
-                    }
-                    dotnet publish ${env.PROJECT} -c Release -o ${env:PUBLISH_DIR}
-                """
+                powershell '''
+                    dotnet publish "src/Web/Web.csproj" -c Release -o "$env:PUBLISH_DIR"
+                '''
             }
         }
 
@@ -90,7 +91,7 @@ pipeline {
             steps {
                 powershell '''
                     if (Test-Path "src/Web/appsettings.Staging.json") {
-                        Copy-Item "src/Web/appsettings.Staging.json" "${env:PUBLISH_DIR}\\appsettings.json" -Force
+                        Copy-Item "src/Web/appsettings.Staging.json" "$env:PUBLISH_DIR\\appsettings.json" -Force
                         Write-Host "Staging config applied."
                     }
                 '''
@@ -100,42 +101,107 @@ pipeline {
         stage('Clean and Deploy to Staging') {
             steps {
                 powershell '''
-                    $publish = "${env:PUBLISH_DIR}"
-                    $sitePath = "${env:STAGING_DIR}"
-                    $pool = "${env:STAGING_POOL}"
-                    $identity = "IIS APPPOOL\\${pool}"
+                    $publish = "$env:PUBLISH_DIR"
+                    $target = "$env:STAGING_DIR"
+                    $pool   = "$env:STAGING_POOL"
+                    $identity = "IIS APPPOOL\\$pool"
 
-                    # Validate publish directory
                     if (!(Test-Path $publish)) {
-                        Write-Host "ERROR: Publish directory does not exist: $publish"
+                        Write-Host "ERROR: Publish directory not found: $publish"
                         exit 1
                     }
 
-                    # Create app pool
+                    # Create app pool if not exists
                     if (-not (Get-WebAppPoolState -Name $pool -ErrorAction SilentlyContinue)) {
                         New-WebAppPool -Name $pool
-                        Write-Host "Created app pool: $pool"
                     }
 
-                    # Create website directory
-                    if (!(Test-Path $sitePath)) {
-                        New-Item -ItemType Directory -Path $sitePath -Force
+                    # Create site directory
+                    if (!(Test-Path $target)) {
+                        New-Item -ItemType Directory -Path $target -Force | Out-Null
                     } else {
-                        Get-ChildItem $sitePath -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue
+                        Get-ChildItem $target -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue
                     }
 
                     # Copy files
-                    Copy-Item "$publish\\*" $sitePath -Recurse -Force
+                    Copy-Item "$publish\\*" $target -Recurse -Force
 
-                    # Set file permissions
-                    icacls $sitePath /grant "${identity}:(OI)(CI)(M)" /T /Q
+                    # FIXED: correct identity formatting
+                    icacls $target /grant "${identity}:(OI)(CI)(M)" /T /Q
 
                     # Create website if missing
                     if (-not (Test-Path IIS:\\Sites\\eShopOnWeb-staging)) {
-                        New-Website -Name "eShopOnWeb-staging" `
-                                    -Port 8081 `
-                                    -PhysicalPath $sitePath `
-                                    -ApplicationPool $pool
+                        New-Website -Name "eShopOnWeb-staging" -Port 8081 -PhysicalPath $target -ApplicationPool $pool
+                    }
+                '''
+            }
+        }
+
+        stage('Verify Staging Site') {
+            steps {
+                powershell '''
+                    try {
+                        $response = Invoke-WebRequest -Uri "http://localhost:8081" -UseBasicParsing -TimeoutSec 10
+                        if ($response.StatusCode -ne 200) { throw "Non-200 response" }
+                        Write-Host "Staging site is running."
+                    } catch {
+                        Write-Host "ERROR: Staging site check failed."
+                        exit 1
+                    }
+                '''
+            }
+        }
+
+        stage('Manual Approval for Production') {
+            steps {
+                input message: "Deploy to PRODUCTION?", ok: "Deploy"
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                powershell '''
+                    $publish = "$env:PUBLISH_DIR"
+                    $target = "$env:PROD_DIR"
+                    $pool   = "$env:PROD_POOL"
+                    $identity = "IIS APPPOOL\\$pool"
+
+                    if (!(Test-Path $publish)) {
+                        Write-Host "ERROR: Publish directory missing!"
+                        exit 1
+                    }
+
+                    if (-not (Get-WebAppPoolState -Name $pool -ErrorAction SilentlyContinue)) {
+                        New-WebAppPool -Name $pool
+                    }
+
+                    if (!(Test-Path $target)) {
+                        New-Item -ItemType Directory -Path $target -Force | Out-Null
+                    } else {
+                        Get-ChildItem $target -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue
+                    }
+
+                    Copy-Item "$publish\\*" $target -Recurse -Force
+
+                    icacls $target /grant "${identity}:(OI)(CI)(M)" /T /Q
+
+                    if (-not (Test-Path IIS:\\Sites\\eShopOnWeb)) {
+                        New-Website -Name "eShopOnWeb" -Port 8080 -PhysicalPath $target -ApplicationPool $pool
+                    }
+                '''
+            }
+        }
+
+        stage('Verify Production Site') {
+            steps {
+                powershell '''
+                    try {
+                        $response = Invoke-WebRequest -Uri "http://localhost:8080" -UseBasicParsing -TimeoutSec 10
+                        if ($response.StatusCode -ne 200) { throw "Non-200 response" }
+                        Write-Host "Production site is running."
+                    } catch {
+                        Write-Host "ERROR: Production site check failed."
+                        exit 1
                     }
                 '''
             }
@@ -143,12 +209,11 @@ pipeline {
     }
 
     post {
-        always {
-            echo "Pipeline finished."
-            echo "SonarQube: http://localhost:9000/dashboard?id=eShopOnWeb"
+        success {
+            echo "Pipeline completed successfully."
         }
         failure {
-            echo "Pipeline failed."
+            echo "Pipeline failed. Check logs."
         }
     }
 }
