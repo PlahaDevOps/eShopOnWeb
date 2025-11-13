@@ -204,6 +204,23 @@ pipeline {
 
                     Copy-Item "$publishPath\\*" $sitePath -Recurse -Force
                     Write-Host "Files copied to staging path."
+                    
+                    # Verify web.config was deployed correctly
+                    $webConfigPath = "$sitePath\\web.config"
+                    if (Test-Path $webConfigPath) {
+                        $webConfigContent = Get-Content $webConfigPath -Raw
+                        if ($webConfigContent -match 'processPath="C:\\Program Files\\dotnet\\dotnet.exe"') {
+                            Write-Host "web.config verified: Full dotnet path is correct"
+                        } else {
+                            Write-Host "WARNING: web.config may have old processPath. Checking..."
+                            # Fix it if needed
+                            $webConfigContent = $webConfigContent -replace 'processPath="dotnet"', 'processPath="C:\Program Files\dotnet\dotnet.exe"'
+                            Set-Content -Path $webConfigPath -Value $webConfigContent -NoNewline
+                            Write-Host "Fixed web.config: Updated processPath to full path"
+                        }
+                    } else {
+                        Write-Host "WARNING: web.config not found in publish output"
+                    }
 
                     # Create logs folder and set permissions
                     $logsPath = "$sitePath\\logs"
