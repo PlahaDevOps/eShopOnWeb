@@ -182,30 +182,116 @@ pipeline {
                 powershell '''
                     Import-Module WebAdministration -ErrorAction SilentlyContinue;
                     $appPool = $env:STAGING_APPPOOL;
-                    if (Test-Path ("IIS:\\AppPools\\" + $appPool)) {
-                        Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
-                        Start-Sleep -Seconds 5;
+                    $siteName = $env:STAGING_SITE;
+                    $sitePath = $env:STAGING_PATH;
+                    
+                    # Check if App Pool exists and verify identity is valid
+                    $poolPath = "IIS:\\AppPools\\" + $appPool;
+                    $appPoolIdentity = "IIS APPPOOL\$appPool";
+                    $identityCorrupted = $false;
+                    
+                    if (Test-Path $poolPath) {
+                        Write-Host "Application pool exists: $appPool";
+                        Write-Host "Checking if identity is valid: $appPoolIdentity";
+                        
+                        # Check if the virtual account identity can be resolved
+                        try {
+                            # Try to resolve the account name to verify it exists
+                            $sid = (New-Object System.Security.Principal.NTAccount($appPoolIdentity)).Translate([System.Security.Principal.SecurityIdentifier]);
+                            Write-Host "✅ App pool identity is valid (SID: $sid)";
+                        } catch {
+                            Write-Host "⚠️ App pool identity is CORRUPTED - cannot resolve: $appPoolIdentity";
+                            Write-Host "Error: $($_.Exception.Message)";
+                            Write-Host "This can happen after Windows Updates, system restore, or VM cloning";
+                            $identityCorrupted = $true;
+                        }
+                        
+                        # If identity is corrupted, delete and recreate the app pool
+                        if ($identityCorrupted) {
+                            Write-Host "🛠️ Fixing corrupted app pool identity...";
+                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Start-Sleep -Seconds 2;
+                            Remove-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Write-Host "✅ Deleted corrupted app pool";
+                            Start-Sleep -Seconds 1;
+                        } else {
+                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Start-Sleep -Seconds 5;
+                        }
                     }
-                    if (!(Test-Path $env:STAGING_PATH)) {
-                        New-Item -ItemType Directory -Path $env:STAGING_PATH -Force | Out-Null;
+                    
+                    # Create App Pool if it doesn't exist or was deleted due to corruption
+                    if (!(Test-Path $poolPath)) {
+                        Write-Host "Creating application pool: $appPool";
+                        New-WebAppPool -Name $appPool -Force | Out-Null;
+                        # Configure for .NET Core (No Managed Code)
+                        Set-ItemProperty -Path $poolPath -Name managedRuntimeVersion -Value "";
+                        Set-ItemProperty -Path $poolPath -Name processModel.identityType -Value "ApplicationPoolIdentity";
+                        Write-Host "✅ Application pool created: $appPool";
+                        
+                        # Verify the new identity is valid
+                        try {
+                            $sid = (New-Object System.Security.Principal.NTAccount($appPoolIdentity)).Translate([System.Security.Principal.SecurityIdentifier]);
+                            Write-Host "✅ New app pool identity verified: $appPoolIdentity";
+                        } catch {
+                            Write-Host "⚠️ Warning: Could not verify new identity, but continuing...";
+                        }
+                    }
+                    
+                    # Create directory if it doesn't exist
+                    if (!(Test-Path $sitePath)) {
+                        New-Item -ItemType Directory -Path $sitePath -Force | Out-Null;
+                        Write-Host "✅ Created directory: $sitePath";
                     } else {
-                        Get-ChildItem $env:STAGING_PATH -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
+                        Get-ChildItem $sitePath -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
                     }
-                    Copy-Item "$env:PUBLISH_DIR\\*" $env:STAGING_PATH -Recurse -Force;
+                    
+                    # Copy published files
+                    Copy-Item "$env:PUBLISH_DIR\\*" $sitePath -Recurse -Force;
+                    Write-Host "✅ Files copied to: $sitePath";
+                    
+                    # Create Website if it doesn't exist
+                    $existingSite = Get-Website -Name $siteName -ErrorAction SilentlyContinue;
+                    if ($null -eq $existingSite) {
+                        Write-Host "Creating website: $siteName";
+                        New-Website -Name $siteName -PhysicalPath $sitePath -ApplicationPool $appPool -Port 8081 -Force | Out-Null;
+                        Write-Host "✅ Website created: $siteName";
+                    } else {
+                        Write-Host "Website already exists: $siteName";
+                        # Update website to use correct app pool and path
+                        Set-ItemProperty -Path "IIS:\\Sites\\$siteName" -Name applicationPool -Value $appPool;
+                        Set-ItemProperty -Path "IIS:\\Sites\\$siteName" -Name physicalPath -Value $sitePath;
+                    }
                     
                     # Set proper permissions for IIS App Pool
-                    $appPoolIdentity = "IIS APPPOOL\$appPool";
-                    icacls $env:STAGING_PATH /grant "${appPoolIdentity}:(RX)" /T /Q
-                    
-                    # Set ASPNETCORE_ENVIRONMENT for staging (using web.config or app pool environment)
-                    $sitePath = "IIS:\\Sites\\$env:STAGING_SITE";
-                    if (Test-Path $sitePath) {
-                        Set-WebConfigurationProperty -PSPath $sitePath -Filter "system.webServer/aspNetCore/environmentVariables" -Name "." -Value @{name="ASPNETCORE_ENVIRONMENT";value="Staging"} -ErrorAction SilentlyContinue;
+                    try {
+                        $poolConfig = Get-ItemProperty $poolPath;
+                        $processModel = $poolConfig.processModel;
+                        $identityType = $processModel.identityType;
+                        
+                        if ($identityType -eq "ApplicationPoolIdentity") {
+                            Write-Host "Setting permissions for: $appPoolIdentity";
+                            # Use (OI)(CI)(M) for Modify permissions - more permissive for .NET Core apps
+                            $grantArg = "$appPoolIdentity:(OI)(CI)(M)";
+                            & icacls $sitePath /grant $grantArg /T /Q 2>&1 | Out-Null;
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Host "✅ Permissions set successfully";
+                            } else {
+                                Write-Host "⚠️ Permission setting returned exit code $LASTEXITCODE";
+                                Write-Host "This might indicate the identity is still corrupted. Check Event Viewer for details.";
+                            }
+                        } else {
+                            Write-Host "⚠️ App pool uses custom identity ($identityType), skipping permission setting";
+                        }
+                    } catch {
+                        Write-Host "⚠️ Error setting permissions: $($_.Exception.Message)";
+                        Write-Host "This might indicate the identity is corrupted. The app pool was recreated, but identity may need manual verification.";
                     }
                     
+                    # Start App Pool and Website
                     Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
                     Restart-WebAppPool -Name $appPool;
-                    Start-Website -Name $env:STAGING_SITE -ErrorAction SilentlyContinue;
+                    Start-Website -Name $siteName -ErrorAction SilentlyContinue;
                     Write-Host "✅ Deployment completed. Waiting for app to start...";
                     Start-Sleep -Seconds 5;
                 '''
@@ -267,24 +353,127 @@ pipeline {
                 powershell '''
                     Import-Module WebAdministration -ErrorAction SilentlyContinue;
                     $appPool = $env:PROD_APPPOOL;
-                    if (Test-Path ("IIS:\\AppPools\\" + $appPool)) {
-                        Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
-                        Start-Sleep -Seconds 5;
+                    $siteName = $env:PROD_SITE;
+                    $sitePath = $env:PROD_PATH;
+                    
+                    # Check if App Pool exists and verify identity is valid
+                    $poolPath = "IIS:\\AppPools\\" + $appPool;
+                    $appPoolIdentity = "IIS APPPOOL\$appPool";
+                    $identityCorrupted = $false;
+                    
+                    if (Test-Path $poolPath) {
+                        Write-Host "Application pool exists: $appPool";
+                        Write-Host "Checking if identity is valid: $appPoolIdentity";
+                        
+                        # Check if the virtual account identity can be resolved
+                        try {
+                            # Try to resolve the account name to verify it exists
+                            $sid = (New-Object System.Security.Principal.NTAccount($appPoolIdentity)).Translate([System.Security.Principal.SecurityIdentifier]);
+                            Write-Host "✅ App pool identity is valid (SID: $sid)";
+                        } catch {
+                            Write-Host "⚠️ App pool identity is CORRUPTED - cannot resolve: $appPoolIdentity";
+                            Write-Host "Error: $($_.Exception.Message)";
+                            Write-Host "This can happen after Windows Updates, system restore, or VM cloning";
+                            $identityCorrupted = $true;
+                        }
+                        
+                        # If identity is corrupted, delete and recreate the app pool
+                        if ($identityCorrupted) {
+                            Write-Host "🛠️ Fixing corrupted app pool identity...";
+                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Start-Sleep -Seconds 2;
+                            Remove-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Write-Host "✅ Deleted corrupted app pool";
+                            Start-Sleep -Seconds 1;
+                        } else {
+                            Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
+                            Start-Sleep -Seconds 5;
+                        }
                     }
-                    if (!(Test-Path $env:PROD_PATH)) {
-                        New-Item -ItemType Directory -Path $env:PROD_PATH -Force | Out-Null;
+                    
+                    # Create App Pool if it doesn't exist or was deleted due to corruption
+                    if (!(Test-Path $poolPath)) {
+                        Write-Host "Creating application pool: $appPool";
+                        New-WebAppPool -Name $appPool -Force | Out-Null;
+                        # Configure for .NET Core (No Managed Code)
+                        Set-ItemProperty -Path $poolPath -Name managedRuntimeVersion -Value "";
+                        Set-ItemProperty -Path $poolPath -Name processModel.identityType -Value "ApplicationPoolIdentity";
+                        Write-Host "✅ Application pool created: $appPool";
+                        
+                        # Verify the new identity is valid
+                        try {
+                            $sid = (New-Object System.Security.Principal.NTAccount($appPoolIdentity)).Translate([System.Security.Principal.SecurityIdentifier]);
+                            Write-Host "✅ New app pool identity verified: $appPoolIdentity";
+                        } catch {
+                            Write-Host "⚠️ Warning: Could not verify new identity, but continuing...";
+                        }
+                    }
+                    
+                    # Create directory if it doesn't exist
+                    if (!(Test-Path $sitePath)) {
+                        New-Item -ItemType Directory -Path $sitePath -Force | Out-Null;
+                        Write-Host "✅ Created directory: $sitePath";
                     } else {
-                        Get-ChildItem $env:PROD_PATH -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
+                        Get-ChildItem $sitePath -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue;
                     }
-                    Copy-Item "$env:PUBLISH_DIR\\*" $env:PROD_PATH -Recurse -Force;
+                    
+                    # Copy published files
+                    Copy-Item "$env:PUBLISH_DIR\\*" $sitePath -Recurse -Force;
+                    Write-Host "✅ Files copied to: $sitePath";
+                    
+                    # Copy production appsettings
                     if (Test-Path 'src/Web/appsettings.Production.json') {
-                        Copy-Item 'src/Web/appsettings.Production.json' "$env:PROD_PATH/appsettings.json" -Force;
+                        Copy-Item 'src/Web/appsettings.Production.json' "$sitePath/appsettings.json" -Force;
+                        Write-Host "✅ Production appsettings copied";
                     } else {
-                        Copy-Item 'src/Web/appsettings.json' "$env:PROD_PATH/appsettings.json" -Force;
+                        Copy-Item 'src/Web/appsettings.json' "$sitePath/appsettings.json" -Force;
+                        Write-Host "⚠️ Using default appsettings.json";
                     }
+                    
+                    # Create Website if it doesn't exist
+                    $existingSite = Get-Website -Name $siteName -ErrorAction SilentlyContinue;
+                    if ($null -eq $existingSite) {
+                        Write-Host "Creating website: $siteName";
+                        New-Website -Name $siteName -PhysicalPath $sitePath -ApplicationPool $appPool -Port 8080 -Force | Out-Null;
+                        Write-Host "✅ Website created: $siteName";
+                    } else {
+                        Write-Host "Website already exists: $siteName";
+                        # Update website to use correct app pool and path
+                        Set-ItemProperty -Path "IIS:\\Sites\\$siteName" -Name applicationPool -Value $appPool;
+                        Set-ItemProperty -Path "IIS:\\Sites\\$siteName" -Name physicalPath -Value $sitePath;
+                    }
+                    
+                    # Set proper permissions for IIS App Pool
+                    try {
+                        $poolConfig = Get-ItemProperty $poolPath;
+                        $processModel = $poolConfig.processModel;
+                        $identityType = $processModel.identityType;
+                        
+                        if ($identityType -eq "ApplicationPoolIdentity") {
+                            Write-Host "Setting permissions for: $appPoolIdentity";
+                            # Use (OI)(CI)(M) for Modify permissions - more permissive for .NET Core apps
+                            $grantArg = "$appPoolIdentity:(OI)(CI)(M)";
+                            & icacls $sitePath /grant $grantArg /T /Q 2>&1 | Out-Null;
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Host "✅ Permissions set successfully";
+                            } else {
+                                Write-Host "⚠️ Permission setting returned exit code $LASTEXITCODE";
+                                Write-Host "This might indicate the identity is still corrupted. Check Event Viewer for details.";
+                            }
+                        } else {
+                            Write-Host "⚠️ App pool uses custom identity ($identityType), skipping permission setting";
+                        }
+                    } catch {
+                        Write-Host "⚠️ Error setting permissions: $($_.Exception.Message)";
+                        Write-Host "This might indicate the identity is corrupted. The app pool was recreated, but identity may need manual verification.";
+                    }
+                    
+                    # Start App Pool and Website
                     Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue;
                     Restart-WebAppPool -Name $appPool;
-                    Start-Website -Name $env:PROD_SITE -ErrorAction SilentlyContinue;
+                    Start-Website -Name $siteName -ErrorAction SilentlyContinue;
+                    Write-Host "✅ Deployment completed. Waiting for app to start...";
+                    Start-Sleep -Seconds 5;
                 '''
             }
         }
