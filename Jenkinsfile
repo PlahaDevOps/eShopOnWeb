@@ -56,13 +56,16 @@ pipeline {
         stage('Restore') {
             steps {
                 bat '''
+                    echo Setting up MSBuild environment...
+                    if not exist "C:\\Windows\\SystemTemp\\MSBuildTemp" mkdir "C:\\Windows\\SystemTemp\\MSBuildTemp"
+                    
                     echo Cleaning NuGet cache and temp files...
                     dotnet nuget locals all --clear
                     if exist "%TEMP%\\MSBuildTemp" rmdir /s /q "%TEMP%\\MSBuildTemp" 2>nul
                     if exist "%LOCALAPPDATA%\\Temp\\MSBuildTemp" rmdir /s /q "%LOCALAPPDATA%\\Temp\\MSBuildTemp" 2>nul
                     
                     echo Restoring packages (single-threaded to avoid MSBuild node crashes)...
-                    dotnet restore %SOLUTION% --verbosity minimal /p:UseSharedCompilation=false /m:1
+                    dotnet restore %SOLUTION% --verbosity minimal /maxcpucount:1
                 '''
             }
         }
