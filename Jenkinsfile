@@ -100,6 +100,11 @@ pipeline {
                         
                         bat """
                             echo === SONAR BEGIN ===
+                            if not exist "${scannerHome}\\SonarScanner.MSBuild.exe" (
+                                echo ERROR: SonarScanner.MSBuild.exe not found at ${scannerHome}
+                                exit /b 1
+                            )
+                            
                             "${scannerHome}\\SonarScanner.MSBuild.exe" begin ^
                                 /k:"eShopOnWeb" ^
                                 /n:"eShopOnWeb" ^
@@ -108,12 +113,35 @@ pipeline {
                                 /d:sonar.cs.opencover.reportsPaths=**\\coverage.opencover.xml ^
                                 /d:sonar.verbose=true
                             
+                            if errorlevel 1 (
+                                echo ERROR: SonarScanner begin failed
+                                exit /b 1
+                            )
+                            
+                            echo Verifying .sonarqube folder was created...
+                            if not exist ".sonarqube" (
+                                echo WARNING: .sonarqube folder was not created
+                            ) else (
+                                echo .sonarqube folder exists
+                            )
+                            
                             echo === BUILDING SOLUTION ===
                             dotnet build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
+                            
+                            if errorlevel 1 (
+                                echo ERROR: Build failed during SonarQube analysis
+                                "${scannerHome}\\SonarScanner.MSBuild.exe" end /d:sonar.login=%SONAR_TOKEN%
+                                exit /b 1
+                            )
                             
                             echo === SONAR END ===
                             "${scannerHome}\\SonarScanner.MSBuild.exe" end ^
                                 /d:sonar.login=%SONAR_TOKEN%
+                            
+                            if errorlevel 1 (
+                                echo ERROR: SonarScanner end failed
+                                exit /b 1
+                            )
                         """
                     }
                 }
@@ -234,33 +262,60 @@ pipeline {
                 powershell '''
                     $url = "http://localhost:8081"
                     $logs = "$env:STAGING_PATH\\logs"
+                    $sitePath = $env:STAGING_PATH
 
                     Start-Sleep -Seconds 10
 
+                    Write-Host "===== DIAGNOSTICS ====="
                     Write-Host "Checking App Pool..."
                     $poolState = (Get-WebAppPoolState $env:STAGING_APPPOOL).Value
                     Write-Host "App Pool State: $poolState"
 
-                    if (Test-Path $logs) {
-                        $file = Get-ChildItem $logs -Filter "stdout*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-                        if ($file) {
-                            Write-Host "======= Last log file: $($file.Name) ======="
-                            Get-Content $file.FullName -Tail 20
-                        } else {
-                            Write-Host "No logs found."
+                    Write-Host "Checking web.config..."
+                    $webConfig = "$sitePath\\web.config"
+                    if (Test-Path $webConfig) {
+                        $config = Get-Content $webConfig -Raw
+                        if ($config -match 'arguments="([^"]*)"') {
+                            Write-Host "web.config arguments: $($matches[1])"
                         }
+                    } else {
+                        Write-Host "WARNING: web.config not found!"
+                    }
+
+                    Write-Host "Checking for log files..."
+                    if (Test-Path $logs) {
+                        $files = Get-ChildItem $logs -Filter "stdout*.log" -ErrorAction SilentlyContinue
+                        if ($files) {
+                            $file = $files | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                            Write-Host "======= Latest log: $($file.Name) ======="
+                            Get-Content $file.FullName -Tail 30 -ErrorAction SilentlyContinue
+                        } else {
+                            Write-Host "No log files found in $logs"
+                        }
+                    } else {
+                        Write-Host "Logs folder does not exist: $logs"
+                    }
+
+                    Write-Host "Checking Windows Event Log for recent errors..."
+                    $events = Get-EventLog -LogName Application -Source "IIS*","ASP.NET*" -Newest 5 -ErrorAction SilentlyContinue
+                    if ($events) {
+                        Write-Host "Recent IIS/ASP.NET events:"
+                        $events | ForEach-Object { Write-Host "[$($_.TimeGenerated)] $($_.Source): $($_.Message.Substring(0, [Math]::Min(200, $_.Message.Length)))" }
                     }
 
                     Write-Host "Checking website..."
                     try {
                         $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
                         if ($res.StatusCode -eq 200) {
-                            Write-Host "Staging is RUNNING OK."
+                            Write-Host "SUCCESS: Staging is RUNNING OK."
                         } else {
-                            Write-Host "Unexpected status: $($res.StatusCode)"
+                            Write-Host "WARNING: Unexpected status: $($res.StatusCode)"
                         }
                     } catch {
-                        Write-Host "Staging ERROR: $($_.Exception.Message)"
+                        Write-Host "ERROR: Staging verification failed: $($_.Exception.Message)"
+                        if ($_.Exception.Response) {
+                            Write-Host "Response Status: $($_.Exception.Response.StatusCode)"
+                        }
                     }
                 '''
             }
