@@ -211,8 +211,8 @@ pipeline {
 
                     # Permissions
                     $identity = "IIS APPPOOL\\$pool"
-                    icacls $sitePath /grant "$identity:(OI)(CI)(M)" /T /Q
-                    icacls $logs /grant "$identity:(OI)(CI)(M)" /T /Q
+                    icacls $sitePath /grant "${identity}:(OI)(CI)(M)" /T /Q
+                    icacls $logs /grant "${identity}:(OI)(CI)(M)" /T /Q
 
                     Restart-WebAppPool $pool
                     Start-Website $site -ErrorAction SilentlyContinue
