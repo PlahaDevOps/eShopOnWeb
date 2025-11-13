@@ -214,7 +214,8 @@ pipeline {
                         } else {
                             Write-Host "WARNING: web.config may have old processPath. Checking..."
                             # Fix it if needed
-                            $webConfigContent = $webConfigContent -replace 'processPath="dotnet"', 'processPath="C:\Program Files\dotnet\dotnet.exe"'
+                            $dotnetPath = "C:\\Program Files\\dotnet\\dotnet.exe"
+                            $webConfigContent = $webConfigContent -replace 'processPath="dotnet"', "processPath=`"$dotnetPath`""
                             Set-Content -Path $webConfigPath -Value $webConfigContent -NoNewline
                             Write-Host "Fixed web.config: Updated processPath to full path"
                         }
