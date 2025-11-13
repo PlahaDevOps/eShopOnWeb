@@ -209,7 +209,8 @@ pipeline {
                     $webConfigPath = "$sitePath\\web.config"
                     if (Test-Path $webConfigPath) {
                         $webConfigContent = Get-Content $webConfigPath -Raw
-                        if ($webConfigContent -match 'processPath="C:\\Program Files\\dotnet\\dotnet.exe"') {
+                        $expectedPath = "C:\\Program Files\\dotnet\\dotnet.exe"
+                        if ($webConfigContent -like "*processPath=`"$expectedPath`"*") {
                             Write-Host "web.config verified: Full dotnet path is correct"
                         } else {
                             Write-Host "WARNING: web.config may have old processPath. Checking..."
