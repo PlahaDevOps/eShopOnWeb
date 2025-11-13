@@ -184,6 +184,13 @@ pipeline {
                     Copy-Item "$publishPath\\*" $sitePath -Recurse -Force
                     Write-Host "Files copied to staging path."
 
+                    # Create logs folder and set permissions
+                    $logsPath = "$sitePath\\logs"
+                    if (!(Test-Path $logsPath)) {
+                        New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
+                        Write-Host "Created logs folder: $logsPath"
+                    }
+
                     if (Test-Path "IIS:\\AppPools\\$appPool") {
                         Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
                     } else {
@@ -200,7 +207,12 @@ pipeline {
                         New-Website -Name $siteName -PhysicalPath $sitePath -ApplicationPool $appPool -Port 8081 -Force | Out-Null
                     }
 
-                    icacls $sitePath /grant "IIS_IUSRS:(OI)(CI)(M)" /T /Q
+                    # Set permissions for app pool identity
+                    $identity = "IIS APPPOOL\\$appPool"
+                    $grantArg = "${identity}:(OI)(CI)(M)"
+                    icacls $sitePath /grant $grantArg /T /Q
+                    icacls $logsPath /grant $grantArg /T /Q
+                    Write-Host "Permissions set for app pool identity: $identity"
 
                     Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
                     Restart-WebAppPool -Name $appPool
@@ -215,108 +227,49 @@ pipeline {
             steps {
                 powershell '''
                     $url = "http://localhost:8081"
+                    $sitePath = $env:STAGING_PATH
+                    $logsPath = "$sitePath\\logs"
+                    
+                    Write-Host "Waiting for application to start..."
                     Start-Sleep -Seconds 10
-                    try {
-                        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
-                        if ($response.StatusCode -eq 200) {
-                            Write-Host "Staging is running correctly at $url"
-                        } else {
-                            Write-Host "Staging returned status code $($response.StatusCode)"
-                        }
-                    } catch {
-                        Write-Host "Staging verification failed: $($_.Exception.Message)"
-                    }
-                '''
-            }
-        }
-
-        stage('Manual Approval for Production') {
-            steps {
-                input message: 'Promote build to Production?', ok: 'Deploy'
-            }
-        }
-
-        stage('Deploy to Production') {
-            steps {
-                powershell '''
+                    
+                    # Check app pool status
                     Import-Module WebAdministration -ErrorAction SilentlyContinue
-
-                    $publishPath = "$env:WORKSPACE\\$env:PUBLISH_DIR"
-                    $sitePath    = $env:PROD_PATH
-                    $appPool     = $env:PROD_APPPOOL
-                    $siteName    = $env:PROD_SITE
-
-                    Write-Host "Publish path: $publishPath"
-                    Write-Host "Production path: $sitePath"
-
-                    if (!(Test-Path $publishPath)) {
-                        Write-Host "ERROR: Publish directory does not exist: $publishPath"
-                        exit 1
-                    }
-
-                    if (!(Test-Path $sitePath)) {
-                        New-Item -ItemType Directory -Path $sitePath -Force | Out-Null
+                    $appPool = $env:STAGING_APPPOOL
+                    $poolState = (Get-WebAppPoolState -Name $appPool -ErrorAction SilentlyContinue).Value
+                    Write-Host "App Pool State: $poolState"
+                    
+                    # Check for log files
+                    if (Test-Path $logsPath) {
+                        $logFiles = Get-ChildItem $logsPath -Filter "stdout*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+                        if ($logFiles) {
+                            Write-Host "Found $($logFiles.Count) log file(s). Latest: $($logFiles[0].Name)"
+                            Write-Host "Last 20 lines of latest log:"
+                            Get-Content $logFiles[0].FullName -Tail 20 -ErrorAction SilentlyContinue
+                        } else {
+                            Write-Host "No log files found in $logsPath"
+                        }
                     } else {
-                        Get-ChildItem $sitePath -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue
+                        Write-Host "Logs folder does not exist: $logsPath"
                     }
-
-                    Copy-Item "$publishPath\\*" $sitePath -Recurse -Force
-                    Write-Host "Files copied to production path."
-
-                    $prodConfig = "src/Web/appsettings.Production.json"
-                    if (Test-Path $prodConfig) {
-                        Copy-Item $prodConfig "$sitePath\\appsettings.json" -Force
-                        Write-Host "Production config applied."
-                    } else {
-                        Copy-Item "src/Web/appsettings.json" "$sitePath\\appsettings.json" -Force
-                        Write-Host "Production config not found. Using default appsettings.json."
-                    }
-
-                    if (Test-Path "IIS:\\AppPools\\$appPool") {
-                        Stop-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-                    } else {
-                        New-WebAppPool -Name $appPool | Out-Null
-                    }
-
-                    Set-ItemProperty "IIS:\\AppPools\\$appPool" -Name managedRuntimeVersion -Value ""
-                    Set-ItemProperty "IIS:\\AppPools\\$appPool" -Name processModel.identityType -Value "ApplicationPoolIdentity"
-
-                    if (Get-Website -Name $siteName -ErrorAction SilentlyContinue) {
-                        Set-ItemProperty "IIS:\\Sites\\$siteName" -Name physicalPath -Value $sitePath
-                        Set-ItemProperty "IIS:\\Sites\\$siteName" -Name applicationPool -Value $appPool
-                    } else {
-                        New-Website -Name $siteName -PhysicalPath $sitePath -ApplicationPool $appPool -Port 8080 -Force | Out-Null
-                    }
-
-                    icacls $sitePath /grant "IIS_IUSRS:(OI)(CI)(M)" /T /Q
-
-                    Start-WebAppPool -Name $appPool -ErrorAction SilentlyContinue
-                    Restart-WebAppPool -Name $appPool
-                    Start-Website -Name $siteName -ErrorAction SilentlyContinue
-
-                    Write-Host "Production deployment completed."
-                '''
-            }
-        }
-
-        stage('Verify Production') {
-            steps {
-                powershell '''
-                    $url = "http://localhost:8080"
-                    Start-Sleep -Seconds 10
+                    
+                    # Try to access the site
                     try {
                         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
                         if ($response.StatusCode -eq 200) {
-                            Write-Host "Production is running correctly at $url"
+                            Write-Host "SUCCESS: Staging is running correctly at $url"
                         } else {
-                            Write-Host "Production returned status code $($response.StatusCode)"
+                            Write-Host "WARNING: Staging returned status code $($response.StatusCode)"
                         }
                     } catch {
-                        Write-Host "Production verification failed: $($_.Exception.Message)"
+                        Write-Host "ERROR: Staging verification failed: $($_.Exception.Message)"
+                        Write-Host "Check Event Viewer (Windows Logs > Application) for detailed errors"
+                        Write-Host "Check logs folder at: $logsPath"
                     }
                 '''
             }
         }
+
     }
 
     post {
