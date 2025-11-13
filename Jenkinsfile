@@ -38,36 +38,36 @@ pipeline {
                     $workspaceBase = "C:\\ProgramData\\Jenkins\\.jenkins\\workspace"
                     $jobName = "eShopOnWeb"
                     
-                    Write-Host "🔍 Checking for workspace conflicts..."
+                    Write-Host "[INFO] Checking for workspace conflicts..."
                     Write-Host "Current workspace: $env:WORKSPACE"
                     
                     # Find all workspaces with @ suffix (eShopOnWeb@2, eShopOnWeb@3, etc.)
                     $conflictingWorkspaces = Get-ChildItem -Path $workspaceBase -Directory -Filter "${jobName}@*" -ErrorAction SilentlyContinue
                     
                     if ($conflictingWorkspaces) {
-                        Write-Host "⚠️ Found conflicting workspace folders:"
+                        Write-Host "[WARN] Found conflicting workspace folders:"
                         foreach ($ws in $conflictingWorkspaces) {
                             Write-Host "  - $($ws.FullName)"
                         }
-                        Write-Host "🧹 Cleaning up conflicting workspaces..."
+                        Write-Host "[INFO] Cleaning up conflicting workspaces..."
                         foreach ($ws in $conflictingWorkspaces) {
                             try {
                                 Remove-Item -Path $ws.FullName -Recurse -Force -ErrorAction Stop
-                                Write-Host "  ✅ Removed: $($ws.Name)"
+                                Write-Host "  [OK] Removed: $($ws.Name)"
                             } catch {
-                                Write-Host "  ⚠️ Could not remove $($ws.Name): $($_.Exception.Message)"
+                                Write-Host "  [WARN] Could not remove $($ws.Name): $($_.Exception.Message)"
                             }
                         }
                     } else {
-                        Write-Host "✅ No conflicting workspace folders found"
+                        Write-Host "[OK] No conflicting workspace folders found"
                     }
                     
                     # Verify current workspace exists and is correct
                     if ($env:WORKSPACE -like "*@*") {
-                        Write-Host "⚠️ WARNING: Current workspace has @ suffix: $env:WORKSPACE"
+                        Write-Host "[WARN] WARNING: Current workspace has @ suffix: $env:WORKSPACE"
                         Write-Host "This may cause deployment issues. Consider wiping workspace in Jenkins UI."
                     } else {
-                        Write-Host "✅ Current workspace is clean: $env:WORKSPACE"
+                        Write-Host "[OK] Current workspace is clean: $env:WORKSPACE"
                     }
                 '''
             }
