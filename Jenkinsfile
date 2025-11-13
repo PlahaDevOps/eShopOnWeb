@@ -205,20 +205,51 @@ pipeline {
                     Copy-Item "$publishPath\\*" $sitePath -Recurse -Force
                     Write-Host "Files copied to staging path."
                     
-                    # Verify web.config was deployed correctly
+                    # Verify and fix web.config
                     $webConfigPath = "$sitePath\\web.config"
                     if (Test-Path $webConfigPath) {
                         $webConfigContent = Get-Content $webConfigPath -Raw
-                        $expectedPath = "C:\\Program Files\\dotnet\\dotnet.exe"
-                        if ($webConfigContent -like "*processPath=`"$expectedPath`"*") {
-                            Write-Host "web.config verified: Full dotnet path is correct"
+                        $dotnetPath = "C:\\Program Files\\dotnet\\dotnet.exe"
+                        $needsFix = $false
+                        
+                        # Ensure processPath is set correctly
+                        if ($webConfigContent -notlike "*processPath=`"$dotnetPath`"*") {
+                            Write-Host "Fixing processPath in web.config..."
+                            $webConfigContent = $webConfigContent -replace 'processPath="[^"]*"', "processPath=`"$dotnetPath`""
+                            $needsFix = $true
+                        }
+                        
+                        # Error 0x8007000d often indicates AspNetCoreModuleV2 is not installed
+                        # Try fallback to AspNetCoreModule (more commonly available)
+                        if ($webConfigContent -like "*modules=`"AspNetCoreModuleV2`"*") {
+                            Write-Host "Changing module from AspNetCoreModuleV2 to AspNetCoreModule (common fix for 0x8007000d error)..."
+                            $webConfigContent = $webConfigContent -replace 'modules="AspNetCoreModuleV2"', 'modules="AspNetCoreModule"'
+                            $needsFix = $true
+                        }
+                        
+                        # Ensure hostingModel is set (required for .NET Core 3.1+)
+                        if ($webConfigContent -notlike "*hostingModel=*") {
+                            Write-Host "Adding hostingModel attribute..."
+                            $webConfigContent = $webConfigContent -replace '(<aspNetCore[^>]*)(\s*/>)', '$1 hostingModel="inprocess"$2'
+                            $needsFix = $true
+                        }
+                        
+                        # Validate XML structure
+                        try {
+                            [xml]$null = $webConfigContent
+                            Write-Host "web.config XML structure is valid"
+                        } catch {
+                            Write-Host "ERROR: web.config has invalid XML structure: $($_.Exception.Message)"
+                            exit 1
+                        }
+                        
+                        if ($needsFix) {
+                            # Save with UTF-8 encoding without BOM
+                            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+                            [System.IO.File]::WriteAllText($webConfigPath, $webConfigContent, $utf8NoBom)
+                            Write-Host "web.config has been fixed and saved with UTF-8 encoding"
                         } else {
-                            Write-Host "WARNING: web.config may have old processPath. Checking..."
-                            # Fix it if needed
-                            $dotnetPath = "C:\\Program Files\\dotnet\\dotnet.exe"
-                            $webConfigContent = $webConfigContent -replace 'processPath="dotnet"', "processPath=`"$dotnetPath`""
-                            Set-Content -Path $webConfigPath -Value $webConfigContent -NoNewline
-                            Write-Host "Fixed web.config: Updated processPath to full path"
+                            Write-Host "web.config verified: Configuration is correct"
                         }
                     } else {
                         Write-Host "WARNING: web.config not found in publish output"
