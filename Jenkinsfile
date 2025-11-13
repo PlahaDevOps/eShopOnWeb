@@ -199,14 +199,15 @@ pipeline {
                     if (!(Test-Path "IIS:\\AppPools\\$pool")) {
                         New-WebAppPool $pool
                     }
-                    Stop-WebAppPool $pool -ErrorAction SilentlyContinue
                     Set-ItemProperty "IIS:\\AppPools\\$pool" -Name processModel.identityType -Value ApplicationPoolIdentity
+                    Set-ItemProperty "IIS:\\AppPools\\$pool" -Name managedRuntimeVersion -Value ""
 
                     # Website
                     if (!(Get-Website -Name $site -ErrorAction SilentlyContinue)) {
                         New-Website -Name $site -Port 8081 -PhysicalPath $sitePath -ApplicationPool $pool
                     } else {
                         Set-ItemProperty "IIS:\\Sites\\$site" -Name physicalPath -Value $sitePath
+                        Set-ItemProperty "IIS:\\Sites\\$site" -Name applicationPool -Value $pool
                     }
 
                     # Permissions
@@ -214,8 +215,14 @@ pipeline {
                     icacls $sitePath /grant "${identity}:(OI)(CI)(M)" /T /Q
                     icacls $logs /grant "${identity}:(OI)(CI)(M)" /T /Q
 
-                    Restart-WebAppPool $pool
-                    Start-Website $site -ErrorAction SilentlyContinue
+                    # Start app pool (will start if stopped, or do nothing if already started)
+                    $poolState = (Get-WebAppPoolState -Name $pool -ErrorAction SilentlyContinue).Value
+                    if ($poolState -eq "Stopped") {
+                        Start-WebAppPool -Name $pool
+                    } else {
+                        Restart-WebAppPool -Name $pool -ErrorAction SilentlyContinue
+                    }
+                    Start-Website -Name $site -ErrorAction SilentlyContinue
 
                     Write-Host "Staging deployment complete."
                 '''
