@@ -22,6 +22,23 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddConsole();
 
+/* ---------------------------------------------------------
+   IIS FIX — allow app to run correctly under IIS
+   Fixes:
+   - Port 5000 conflict when running standalone
+   - Proper handling of IIS outofprocess hosting
+---------------------------------------------------------- */
+// When running under IIS with outofprocess, IIS sets ASPNETCORE_URLS
+// If not set, we're running standalone - use port 5002 to avoid conflicts
+var aspnetcoreUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+if (string.IsNullOrEmpty(aspnetcoreUrls))
+{
+    // Not running under IIS - use port 5002 to avoid conflicts with default 5000
+    builder.WebHost.UseUrls("http://localhost:5002");
+}
+// If ASPNETCORE_URLS is set, Kestrel will use it automatically (IIS scenario)
+// ---------------------------------------------------------
+
 // Configure SQL Server (use appsettings.json connection strings for both dev and prod)
 Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
 
