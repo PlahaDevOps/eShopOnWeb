@@ -49,7 +49,17 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                checkout scm
+                script {
+                    try {
+                        timeout(time: 5, unit: 'MINUTES') {
+                            checkout scm
+                        }
+                    } catch (Exception e) {
+                        echo "Checkout failed: ${e.message}"
+                        echo "This might be a network issue. Try running the pipeline again."
+                        error "Checkout stage failed: ${e.message}"
+                    }
+                }
             }
         }
 
