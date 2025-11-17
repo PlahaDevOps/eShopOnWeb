@@ -18,10 +18,6 @@ pipeline {
         STAGING_SITE   = "eShopOnWeb-staging"
         STAGING_APPPOOL = "eShopOnWeb-staging"
 
-        PROD_PATH   = "C:\\inetpub\\eShopOnWeb-production"
-        PROD_SITE   = "eShopOnWeb-production"
-        PROD_APPPOOL = "eShopOnWeb-production"
-
         SONAR_HOST_URL = 'http://localhost:9000'
         SONAR_TOKEN = credentials('sonar-tak')
     }
