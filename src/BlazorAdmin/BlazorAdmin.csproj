@@ -20,6 +20,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Compile Remove="Program.cs" />
 		<Compile Update="Services\CatalogItem\Delete.EditCatalogItemResult.cs">
 			<DependentUpon>Delete.cs</DependentUpon>
 		</Compile>
