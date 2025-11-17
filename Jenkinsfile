@@ -316,7 +316,7 @@ pipeline {
                     # Step 1: Check ASP.NET Core Hosting Bundle
                     Write-Host "`n[1] Checking ASP.NET Core Hosting Bundle..."
                     $dotnetInfo = dotnet --info 2>&1 | Out-String
-                    if ($dotnetInfo -match "Microsoft\.AspNetCore\.App") {
+                    if ($dotnetInfo -match "Microsoft\\.AspNetCore\\.App") {
                         Write-Host "✓ ASP.NET Core runtime found"
                         $runtimeVersions = dotnet --list-runtimes 2>&1 | Select-String "Microsoft.AspNetCore.App"
                         Write-Host "  Installed versions:"
@@ -395,7 +395,7 @@ pipeline {
                         try {
                             $config = Get-Content $webConfig -Raw -ErrorAction Stop
                             # Check for corruption
-                            if ($config -match '<system\.webServer>') {
+                            if ($config -match '<system\\.webServer>') {
                                 Write-Host "  ✓ system.webServer section found"
                             } else {
                                 Write-Host "  ✗ ERROR: Missing system.webServer section"
