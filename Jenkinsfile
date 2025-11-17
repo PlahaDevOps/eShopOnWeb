@@ -402,18 +402,22 @@ pipeline {
                             }
                             if ($config -match '<aspNetCore') {
                                 Write-Host "  ✓ aspNetCore section found"
-                                if ($config -match 'arguments="([^"]*)"') {
-                                    Write-Host "  Arguments: $($matches[1])"
+                                $argMatch = [regex]::Match($config, 'arguments="([^"]+)"')
+                                if ($argMatch.Success) {
+                                    Write-Host "  Arguments: $($argMatch.Groups[1].Value)"
                                 }
-                                if ($config -match 'processPath="([^"]*)"') {
-                                    Write-Host "  Process Path: $($matches[1])"
+                                $pathMatch = [regex]::Match($config, 'processPath="([^"]+)"')
+                                if ($pathMatch.Success) {
+                                    Write-Host "  Process Path: $($pathMatch.Groups[1].Value)"
                                 }
                             } else {
                                 Write-Host "  ✗ ERROR: Missing aspNetCore section"
                             }
                             # Check for proper closing tags
-                            $openTags = ([regex]::Matches($config, '<[^/][^>]*>')).Count
-                            $closeTags = ([regex]::Matches($config, '</[^>]*>')).Count
+                            $openTagPattern = '<[^/][^>]+>'
+                            $closeTagPattern = '</[^>]+>'
+                            $openTags = ([regex]::Matches($config, $openTagPattern)).Count
+                            $closeTags = ([regex]::Matches($config, $closeTagPattern)).Count
                             if ($openTags -ne $closeTags) {
                                 Write-Host "  ✗ WARNING: Possible XML corruption - tag mismatch"
                             }
