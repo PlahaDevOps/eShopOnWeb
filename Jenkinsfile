@@ -63,20 +63,6 @@ pipeline {
                     echo Cleaning NuGet cache...
                     dotnet nuget locals all --clear
 
-                    echo Checking for WebAssembly workloads...
-                    "C:\Program Files\dotnet\dotnet.exe" workload list | findstr /I "wasm-tools" >nul 2>&1
-                    if errorlevel 1 (
-                        echo WebAssembly workloads not found. Installing globally...
-                        "C:\Program Files\dotnet\dotnet.exe" workload install wasm-tools wasm-tools-net8 --skip-sign-check
-                        if errorlevel 1 (
-                            echo WARNING: Failed to install workloads, but continuing...
-                        ) else (
-                            echo WebAssembly workloads installed successfully to C:\Program Files\dotnet\
-                        )
-                    ) else (
-                        echo WebAssembly workloads already installed globally, skipping installation
-                    )
-
                     echo Restoring solution...
                     dotnet restore %SOLUTION% --verbosity minimal /maxcpucount:1
                 '''
