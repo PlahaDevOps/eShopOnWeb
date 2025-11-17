@@ -63,15 +63,15 @@ pipeline {
                     echo Cleaning NuGet cache...
                     dotnet nuget locals all --clear
 
-                    echo Restoring Web project (excluding BlazorAdmin)...
-                    dotnet restore src\\Web\\Web.csproj --verbosity minimal /maxcpucount:1 /p:BuildBlazorAdmin=false
+                    echo Restoring solution...
+                    dotnet restore %SOLUTION% --verbosity minimal /maxcpucount:1
                 '''
             }
         }
 
         stage('Build') {
             steps {
-                bat "dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore /p:BuildBlazorAdmin=false"
+                bat "dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore"
             }
         }
 
@@ -121,8 +121,8 @@ pipeline {
                                 echo .sonarqube folder exists
                             )
                             
-                            echo === BUILDING SOLUTION (excluding BlazorAdmin WebAssembly) ===
-                            dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% /p:UseSharedCompilation=false /p:BuildBlazorAdmin=false
+                            echo === BUILDING SOLUTION ===
+                            dotnet build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
                             
                             if errorlevel 1 (
                                 echo ERROR: Build failed during SonarQube analysis
@@ -174,8 +174,8 @@ pipeline {
         stage('Publish') {
             steps {
                 bat '''
-                    echo Publishing Web project (excluding BlazorAdmin)...
-                    dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained /p:BuildBlazorAdmin=false
+                    echo Publishing Web project...
+                    dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained
                     if errorlevel 1 (
                         echo ERROR: Publish failed
                         exit /b 1
