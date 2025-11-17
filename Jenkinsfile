@@ -61,24 +61,24 @@ pipeline {
             steps {
                 bat '''
                     echo Cleaning NuGet cache...
-                    "C:\Program Files\dotnet\dotnet.exe" nuget locals all --clear
+                    "C:\\Program Files\\dotnet\\dotnet.exe" nuget locals all --clear
 
                     echo Restoring solution...
-                    "C:\Program Files\dotnet\dotnet.exe" restore %SOLUTION% --verbosity minimal /maxcpucount:1
+                    "C:\\Program Files\\dotnet\\dotnet.exe" restore %SOLUTION% --verbosity minimal /maxcpucount:1
                 '''
             }
         }
 
         stage('Build') {
             steps {
-                bat "\"C:\Program Files\dotnet\dotnet.exe\" build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore"
+                bat "\"C:\\Program Files\\dotnet\\dotnet.exe\" build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore"
             }
         }
 
         stage('Test') {
             steps {
                 bat '''
-                    "C:\Program Files\dotnet\dotnet.exe" test tests\\UnitTests\\UnitTests.csproj ^
+                    "C:\\Program Files\\dotnet\\dotnet.exe" test tests\\UnitTests\\UnitTests.csproj ^
                         /p:CollectCoverage=true ^
                         /p:CoverletOutputFormat=opencover ^
                         /p:CoverletOutput="coverage.opencover.xml" ^
@@ -122,7 +122,7 @@ pipeline {
                             )
                             
                             echo === BUILDING SOLUTION ===
-                            "C:\Program Files\dotnet\dotnet.exe" build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
+                            "C:\\Program Files\\dotnet\\dotnet.exe" build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
                             
                             if errorlevel 1 (
                                 echo ERROR: Build failed during SonarQube analysis
@@ -175,7 +175,7 @@ pipeline {
             steps {
                 bat '''
                     echo Publishing Web project...
-                    "C:\Program Files\dotnet\dotnet.exe" publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained
+                    "C:\\Program Files\\dotnet\\dotnet.exe" publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained
                     if errorlevel 1 (
                         echo ERROR: Publish failed
                         exit /b 1
