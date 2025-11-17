@@ -45,7 +45,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ApplicationCore\ApplicationCore.csproj" />
-    <ProjectReference Include="..\BlazorAdmin\BlazorAdmin.csproj" Condition="'$(BuildBlazorAdmin)' != 'false'" />
+    <ProjectReference Include="..\BlazorAdmin\BlazorAdmin.csproj" Condition="'$(BuildBlazorAdmin)' != 'false'">
+      <ReferenceOutputAssembly>true</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+    </ProjectReference>
     <ProjectReference Include="..\BlazorShared\BlazorShared.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>
@@ -66,9 +69,6 @@
   </ItemGroup>
   <ItemGroup>
     <Content Update="web.config">
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
-    <Content Update="Web.runtimeconfig.json">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
     <Content Update="appsettings.json">
