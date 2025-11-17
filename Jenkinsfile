@@ -173,7 +173,22 @@ pipeline {
 
         stage('Publish') {
             steps {
-                bat "dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR%"
+                bat '''
+                    echo Publishing Web project...
+                    dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained
+                    echo Verifying publish output...
+                    if exist "%PUBLISH_DIR%\\Web.dll" (
+                        echo Web.dll found
+                    ) else (
+                        echo ERROR: Web.dll not found in publish folder
+                        exit /b 1
+                    )
+                    if exist "%PUBLISH_DIR%\\Web.runtimeconfig.json" (
+                        echo Web.runtimeconfig.json found
+                    ) else (
+                        echo WARNING: Web.runtimeconfig.json not found - this may cause issues
+                    )
+                '''
             }
         }
 

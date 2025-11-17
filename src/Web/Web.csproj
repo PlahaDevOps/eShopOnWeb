@@ -64,6 +64,9 @@
     <Content Update="web.config">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </Content>
+    <Content Update="Web.runtimeconfig.json">
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
     <Content Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
