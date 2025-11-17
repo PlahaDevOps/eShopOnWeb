@@ -1,4 +1,13 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">	
+﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(BuildBlazorAdmin)' == 'false'">
+    <TargetsForBuild>SkipBuild</TargetsForBuild>
+  </PropertyGroup>
+  <Target Name="SkipBuild">
+    <Message Text="Skipping BlazorAdmin build (BuildBlazorAdmin=false)" Importance="high" />
+  </Target>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />
 		<PackageReference Include="BlazorInputFile" />

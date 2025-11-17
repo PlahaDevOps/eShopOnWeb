@@ -71,7 +71,7 @@ pipeline {
 
         stage('Build') {
             steps {
-                bat "dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore"
+                bat "dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore /p:BuildBlazorAdmin=false"
             }
         }
 
@@ -121,8 +121,8 @@ pipeline {
                                 echo .sonarqube folder exists
                             )
                             
-                            echo === BUILDING SOLUTION ===
-                            dotnet build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
+                            echo === BUILDING SOLUTION (excluding BlazorAdmin WebAssembly) ===
+                            dotnet build src\\Web\\Web.csproj -c %BUILD_CONFIG% /p:UseSharedCompilation=false /p:BuildBlazorAdmin=false
                             
                             if errorlevel 1 (
                                 echo ERROR: Build failed during SonarQube analysis
