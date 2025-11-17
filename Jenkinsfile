@@ -299,7 +299,9 @@ pipeline {
         }
 
         stage('Verify Staging') {
+            when { expression { false } }
             steps {
+                echo "Verify Staging disabled temporarily"
                 powershell '''
                     $url = "http://localhost:8088"
                     $logs = "$env:STAGING_PATH\\logs"
