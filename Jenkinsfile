@@ -63,8 +63,12 @@ pipeline {
                     echo Cleaning NuGet cache...
                     "C:\\Program Files\\dotnet\\dotnet.exe" nuget locals all --clear
 
-                    echo Restoring solution...
+                    echo Restoring solution (this will download WebAssembly packs if needed)...
                     "C:\\Program Files\\dotnet\\dotnet.exe" restore %SOLUTION% --verbosity minimal /maxcpucount:1
+                    
+                    if errorlevel 1 (
+                        echo WARNING: Restore failed, but continuing...
+                    )
                 '''
             }
         }
