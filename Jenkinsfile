@@ -63,8 +63,8 @@ pipeline {
                     echo Cleaning NuGet cache...
                     dotnet nuget locals all --clear
 
-                    echo Restoring solution...
-                    dotnet restore %SOLUTION% --verbosity minimal /maxcpucount:1
+                    echo Restoring Web project (excluding BlazorAdmin)...
+                    dotnet restore src\\Web\\Web.csproj --verbosity minimal /maxcpucount:1 /p:BuildBlazorAdmin=false
                 '''
             }
         }
