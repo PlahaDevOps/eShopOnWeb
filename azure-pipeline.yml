@@ -115,7 +115,7 @@ pipeline {
             steps {
                 bat '''
                     powershell -ExecutionPolicy Bypass -Command "
-                        $url = 'http://localhost:8081';
+                        $url = 'http://localhost:8088';
                         Start-Sleep -Seconds 5;
                         try {
                             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15;

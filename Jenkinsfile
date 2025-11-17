@@ -223,25 +223,66 @@ pipeline {
                     $logs = "$sitePath\\logs"
                     if (!(Test-Path $logs)) { New-Item -ItemType Directory -Path $logs -Force }
 
-                    # App Pool
+                    # App Pool - Configure correctly for .NET 8
                     if (!(Test-Path "IIS:\\AppPools\\$pool")) {
                         New-WebAppPool $pool
+                        Write-Host "Created app pool: $pool"
                     }
-                    Set-ItemProperty "IIS:\\AppPools\\$pool" -Name processModel.identityType -Value ApplicationPoolIdentity
+                    # Critical: Set to "No Managed Code" for .NET Core/8
                     Set-ItemProperty "IIS:\\AppPools\\$pool" -Name managedRuntimeVersion -Value ""
+                    # Set to Integrated Pipeline Mode
+                    Set-ItemProperty "IIS:\\AppPools\\$pool" -Name managedPipelineMode -Value "Integrated"
+                    # Set identity
+                    Set-ItemProperty "IIS:\\AppPools\\$pool" -Name processModel.identityType -Value ApplicationPoolIdentity
+                    # Enable load user profile (required for some scenarios)
+                    Set-ItemProperty "IIS:\\AppPools\\$pool" -Name processModel.loadUserProfile -Value $true
+                    # Set ASPNETCORE_ENVIRONMENT
+                    $appcmd = "$env:SystemRoot\\System32\\inetsrv\\appcmd.exe"
+                    if (Test-Path $appcmd) {
+                        & $appcmd set config "$pool" /section:processModel /+environmentVariables.[name='ASPNETCORE_ENVIRONMENT',value='Staging'] 2>&1 | Out-Null
+                        & $appcmd set config "$pool" /section:processModel /environmentVariables.[name='ASPNETCORE_ENVIRONMENT'].value:"Staging" 2>&1 | Out-Null
+                        Write-Host "Set ASPNETCORE_ENVIRONMENT=Staging for app pool"
+                    }
 
-                    # Website
+                    # Website - Use port 8088 (not 8081 which nginx uses)
                     if (!(Get-Website -Name $site -ErrorAction SilentlyContinue)) {
-                        New-Website -Name $site -Port 8081 -PhysicalPath $sitePath -ApplicationPool $pool
+                        New-Website -Name $site -Port 8088 -PhysicalPath $sitePath -ApplicationPool $pool
+                        Write-Host "Created website $site on port 8088"
                     } else {
                         Set-ItemProperty "IIS:\\Sites\\$site" -Name physicalPath -Value $sitePath
                         Set-ItemProperty "IIS:\\Sites\\$site" -Name applicationPool -Value $pool
+                        # Ensure port binding is 8088
+                        $bindings = Get-WebBinding -Name $site
+                        $hasPort8088 = $false
+                        foreach ($binding in $bindings) {
+                            if ($binding.bindingInformation -like "*:8088:*") {
+                                $hasPort8088 = $true
+                                break
+                            }
+                        }
+                        if (-not $hasPort8088) {
+                            # Remove any existing bindings on wrong ports
+                            Get-WebBinding -Name $site | Where-Object { $_.bindingInformation -notlike "*:8088:*" } | ForEach-Object {
+                                Remove-WebBinding -Name $site -BindingInformation $_.bindingInformation -ErrorAction SilentlyContinue
+                            }
+                            New-WebBinding -Name $site -Protocol http -Port 8088 -IPAddress "*"
+                            Write-Host "Updated website binding to port 8088"
+                        }
                     }
 
-                    # Permissions
+                    # Permissions - Grant to all required identities
                     $identity = "IIS APPPOOL\\$pool"
-                    icacls $sitePath /grant "${identity}:(OI)(CI)(M)" /T /Q
+                    Write-Host "Setting folder permissions..."
+                    # Grant to App Pool identity
+                    icacls $sitePath /grant "${identity}:(OI)(CI)(RX)" /T /Q
                     icacls $logs /grant "${identity}:(OI)(CI)(M)" /T /Q
+                    # Grant to IIS_IUSRS
+                    icacls $sitePath /grant "IIS_IUSRS:(OI)(CI)(RX)" /T /Q
+                    icacls $logs /grant "IIS_IUSRS:(OI)(CI)(M)" /T /Q
+                    # Grant to IUSR
+                    icacls $sitePath /grant "IUSR:(OI)(CI)(RX)" /T /Q
+                    icacls $logs /grant "IUSR:(OI)(CI)(M)" /T /Q
+                    Write-Host "Permissions set for: $identity, IIS_IUSRS, IUSR"
 
                     # Start app pool (will start if stopped, or do nothing if already started)
                     $poolState = (Get-WebAppPoolState -Name $pool -ErrorAction SilentlyContinue).Value
@@ -260,62 +301,255 @@ pipeline {
         stage('Verify Staging') {
             steps {
                 powershell '''
-                    $url = "http://localhost:8081"
+                    $url = "http://localhost:8088"
                     $logs = "$env:STAGING_PATH\\logs"
                     $sitePath = $env:STAGING_PATH
+                    $pool = $env:STAGING_APPPOOL
+                    $site = $env:STAGING_SITE
 
-                    Start-Sleep -Seconds 10
+                    Start-Sleep -Seconds 15
 
-                    Write-Host "===== DIAGNOSTICS ====="
-                    Write-Host "Checking App Pool..."
-                    $poolState = (Get-WebAppPoolState $env:STAGING_APPPOOL).Value
-                    Write-Host "App Pool State: $poolState"
+                    Write-Host "========================================"
+                    Write-Host "   COMPREHENSIVE STAGING VERIFICATION   "
+                    Write-Host "========================================"
 
-                    Write-Host "Checking web.config..."
-                    $webConfig = "$sitePath\\web.config"
-                    if (Test-Path $webConfig) {
-                        $config = Get-Content $webConfig -Raw
-                        if ($config -match 'arguments="([^"]*)"') {
-                            Write-Host "web.config arguments: $($matches[1])"
-                        }
+                    # Step 1: Check ASP.NET Core Hosting Bundle
+                    Write-Host "`n[1] Checking ASP.NET Core Hosting Bundle..."
+                    $dotnetInfo = dotnet --info 2>&1 | Out-String
+                    if ($dotnetInfo -match "Microsoft\.AspNetCore\.App") {
+                        Write-Host "✓ ASP.NET Core runtime found"
+                        $runtimeVersions = dotnet --list-runtimes 2>&1 | Select-String "Microsoft.AspNetCore.App"
+                        Write-Host "  Installed versions:"
+                        $runtimeVersions | ForEach-Object { Write-Host "    - $_" }
                     } else {
-                        Write-Host "WARNING: web.config not found!"
+                        Write-Host "✗ WARNING: ASP.NET Core runtime may not be installed"
+                        Write-Host "  Install from: https://dotnet.microsoft.com/download/dotnet/8.0"
                     }
 
-                    Write-Host "Checking for log files..."
+                    # Step 2: Check App Pool Configuration
+                    Write-Host "`n[2] Checking App Pool: $pool"
+                    try {
+                        $poolInfo = Get-Item "IIS:\\AppPools\\$pool" -ErrorAction Stop
+                        $poolState = (Get-WebAppPoolState -Name $pool).Value
+                        Write-Host "  State: $poolState"
+                        Write-Host "  .NET CLR Version: $($poolInfo.managedRuntimeVersion) (should be empty for No Managed Code)"
+                        Write-Host "  Pipeline Mode: $($poolInfo.managedPipelineMode) (should be Integrated)"
+                        Write-Host "  Identity: $($poolInfo.processModel.identityType)"
+                        
+                        if ($poolInfo.managedRuntimeVersion -ne "") {
+                            Write-Host "  ✗ ERROR: App Pool must use 'No Managed Code' for .NET 8"
+                        }
+                        if ($poolInfo.managedPipelineMode -ne "Integrated") {
+                            Write-Host "  ✗ ERROR: App Pool must use Integrated Pipeline Mode"
+                        }
+                        if ($poolState -eq "Stopped") {
+                            Write-Host "  ⚠ App Pool is stopped - attempting to start..."
+                            Start-WebAppPool -Name $pool
+                            Start-Sleep -Seconds 5
+                            $poolState = (Get-WebAppPoolState -Name $pool).Value
+                            Write-Host "  State after start: $poolState"
+                        }
+                    } catch {
+                        Write-Host "  ✗ ERROR: App Pool not found or inaccessible: $($_.Exception.Message)"
+                    }
+
+                    # Step 3: Check Website Configuration
+                    Write-Host "`n[3] Checking Website: $site"
+                    try {
+                        $website = Get-Website -Name $site -ErrorAction Stop
+                        Write-Host "  State: $($website.State)"
+                        Write-Host "  Physical Path: $($website.physicalPath)"
+                        Write-Host "  App Pool: $($website.applicationPool)"
+                        
+                        $bindings = Get-WebBinding -Name $site
+                        Write-Host "  Bindings:"
+                        $hasPort8088 = $false
+                        foreach ($binding in $bindings) {
+                            Write-Host "    - $($binding.protocol)://$($binding.bindingInformation)"
+                            if ($binding.bindingInformation -like "*:8088:*") {
+                                $hasPort8088 = $true
+                            }
+                        }
+                        if (-not $hasPort8088) {
+                            Write-Host "  ✗ ERROR: Website is not bound to port 8088!"
+                        } else {
+                            Write-Host "  ✓ Port 8088 binding confirmed"
+                        }
+                        
+                        if ($website.State -ne "Started") {
+                            Write-Host "  ⚠ Website is not started - attempting to start..."
+                            Start-Website -Name $site
+                            Start-Sleep -Seconds 5
+                            $website = Get-Website -Name $site
+                            Write-Host "  State after start: $($website.State)"
+                        }
+                    } catch {
+                        Write-Host "  ✗ ERROR: Website not found: $($_.Exception.Message)"
+                    }
+
+                    # Step 4: Validate web.config
+                    Write-Host "`n[4] Validating web.config..."
+                    $webConfig = "$sitePath\\web.config"
+                    if (Test-Path $webConfig) {
+                        Write-Host "  ✓ web.config exists"
+                        try {
+                            $config = Get-Content $webConfig -Raw -ErrorAction Stop
+                            # Check for corruption
+                            if ($config -match '<system\.webServer>') {
+                                Write-Host "  ✓ system.webServer section found"
+                            } else {
+                                Write-Host "  ✗ ERROR: Missing system.webServer section"
+                            }
+                            if ($config -match '<aspNetCore') {
+                                Write-Host "  ✓ aspNetCore section found"
+                                if ($config -match 'arguments="([^"]*)"') {
+                                    Write-Host "  Arguments: $($matches[1])"
+                                }
+                                if ($config -match 'processPath="([^"]*)"') {
+                                    Write-Host "  Process Path: $($matches[1])"
+                                }
+                            } else {
+                                Write-Host "  ✗ ERROR: Missing aspNetCore section"
+                            }
+                            # Check for proper closing tags
+                            $openTags = ([regex]::Matches($config, '<[^/][^>]*>')).Count
+                            $closeTags = ([regex]::Matches($config, '</[^>]*>')).Count
+                            if ($openTags -ne $closeTags) {
+                                Write-Host "  ✗ WARNING: Possible XML corruption - tag mismatch"
+                            }
+                        } catch {
+                            Write-Host "  ✗ ERROR reading web.config: $($_.Exception.Message)"
+                        }
+                    } else {
+                        Write-Host "  ✗ ERROR: web.config NOT FOUND at $webConfig"
+                    }
+
+                    # Check if Web.dll exists
+                    $webDll = "$sitePath\\Web.dll"
+                    if (Test-Path $webDll) {
+                        Write-Host "  ✓ Web.dll exists"
+                    } else {
+                        Write-Host "  ✗ ERROR: Web.dll NOT FOUND at $webDll"
+                    }
+
+                    # Step 5: Check Folder Permissions
+                    Write-Host "`n[5] Checking folder permissions..."
+                    $requiredIdentities = @("IIS APPPOOL\$pool", "IIS_IUSRS", "IUSR")
+                    foreach ($identity in $requiredIdentities) {
+                        $acl = Get-Acl $sitePath -ErrorAction SilentlyContinue
+                        $hasAccess = $false
+                        if ($acl) {
+                            $rules = $acl.Access | Where-Object { $_.IdentityReference -like "*$identity*" }
+                            if ($rules) {
+                                Write-Host "  ✓ $identity has access"
+                                $hasAccess = $true
+                            }
+                        }
+                        if (-not $hasAccess) {
+                            Write-Host "  ⚠ $identity may not have proper access"
+                        }
+                    }
+
+                    # Step 6: Check Event Viewer for Errors
+                    Write-Host "`n[6] Checking Windows Event Log for IIS errors..."
+                    $errorSources = @("IIS-W3SVC-WP", "IIS AspNetCore Module V2", "ASP.NET*", "Microsoft-Windows-IIS*")
+                    $allEvents = @()
+                    foreach ($source in $errorSources) {
+                        $events = Get-EventLog -LogName Application -Source $source -Newest 10 -ErrorAction SilentlyContinue
+                        if ($events) {
+                            $allEvents += $events
+                        }
+                    }
+                    if ($allEvents.Count -gt 0) {
+                        Write-Host "  Found $($allEvents.Count) recent IIS/ASP.NET events:"
+                        $allEvents | Sort-Object TimeGenerated -Descending | Select-Object -First 10 | ForEach-Object {
+                            $level = if ($_.EntryType -eq "Error") { "✗ ERROR" } elseif ($_.EntryType -eq "Warning") { "⚠ WARNING" } else { "ℹ INFO" }
+                            Write-Host "    [$($_.TimeGenerated)] $level - $($_.Source)"
+                            Write-Host "      $($_.Message.Substring(0, [Math]::Min(250, $_.Message.Length)))"
+                        }
+                    } else {
+                        Write-Host "  ✓ No recent IIS/ASP.NET errors found"
+                    }
+
+                    # Step 7: Check Log Files
+                    Write-Host "`n[7] Checking application log files..."
                     if (Test-Path $logs) {
                         $files = Get-ChildItem $logs -Filter "stdout*.log" -ErrorAction SilentlyContinue
                         if ($files) {
                             $file = $files | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-                            Write-Host "======= Latest log: $($file.Name) ======="
-                            Get-Content $file.FullName -Tail 30 -ErrorAction SilentlyContinue
+                            Write-Host "  ✓ Found log file: $($file.Name)"
+                            Write-Host "  Last modified: $($file.LastWriteTime)"
+                            Write-Host "  Size: $([math]::Round($file.Length/1KB, 2)) KB"
+                            Write-Host "`n  ======= Latest log entries (last 50 lines) ======="
+                            Get-Content $file.FullName -Tail 50 -ErrorAction SilentlyContinue
+                            Write-Host "  ================================================"
                         } else {
-                            Write-Host "No log files found in $logs"
+                            Write-Host "  ⚠ No stdout log files found - app may not have started"
                         }
                     } else {
-                        Write-Host "Logs folder does not exist: $logs"
+                        Write-Host "  ⚠ Logs folder does not exist: $logs"
                     }
 
-                    Write-Host "Checking Windows Event Log for recent errors..."
-                    $events = Get-EventLog -LogName Application -Source "IIS*","ASP.NET*" -Newest 5 -ErrorAction SilentlyContinue
-                    if ($events) {
-                        Write-Host "Recent IIS/ASP.NET events:"
-                        $events | ForEach-Object { Write-Host "[$($_.TimeGenerated)] $($_.Source): $($_.Message.Substring(0, [Math]::Min(200, $_.Message.Length)))" }
+                    # Step 8: Check Port Binding
+                    Write-Host "`n[8] Checking port 8088 binding..."
+                    $port8088 = Get-NetTCPConnection -LocalPort 8088 -ErrorAction SilentlyContinue
+                    if ($port8088) {
+                        Write-Host "  ✓ Port 8088 is listening"
+                        Write-Host "  State: $($port8088.State)"
+                        Write-Host "  Process ID: $($port8088.OwningProcess)"
+                    } else {
+                        Write-Host "  ✗ Port 8088 is NOT listening"
                     }
 
-                    Write-Host "Checking website..."
-                    try {
-                        $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
-                        if ($res.StatusCode -eq 200) {
-                            Write-Host "SUCCESS: Staging is RUNNING OK."
-                        } else {
-                            Write-Host "WARNING: Unexpected status: $($res.StatusCode)"
+                    # Step 9: Test Connectivity
+                    Write-Host "`n[9] Testing website connectivity..."
+                    Write-Host "  URL: $url"
+                    $maxRetries = 3
+                    $success = $false
+                    for ($i = 1; $i -le $maxRetries; $i++) {
+                        try {
+                            Write-Host "  Attempt $i of $maxRetries..."
+                            $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+                            if ($res.StatusCode -eq 200) {
+                                Write-Host "  ✓ SUCCESS: Staging is RUNNING OK at $url"
+                                Write-Host "  Status Code: $($res.StatusCode)"
+                                Write-Host "  Content Length: $($res.Content.Length) bytes"
+                                $success = $true
+                                break
+                            } else {
+                                Write-Host "  ⚠ Unexpected status: $($res.StatusCode)"
+                            }
+                        } catch {
+                            Write-Host "  ✗ Attempt $i failed: $($_.Exception.Message)"
+                            if ($_.Exception.Response) {
+                                Write-Host "    Response Status: $($_.Exception.Response.StatusCode)"
+                            }
+                            # Quick test: Check if Web.dll is accessible (indicates hosting bundle issue)
+                            try {
+                                $dllTest = Invoke-WebRequest -Uri "$url/Web.dll" -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
+                                if ($dllTest.StatusCode -eq 200) {
+                                    Write-Host "    ⚠ WARNING: Web.dll is accessible - ASP.NET Hosting Bundle may be missing!"
+                                    Write-Host "    The site is being served as static files instead of running as .NET app"
+                                }
+                            } catch { }
+                            if ($i -lt $maxRetries) {
+                                Write-Host "    Retrying in 5 seconds..."
+                                Start-Sleep -Seconds 5
+                            }
                         }
-                    } catch {
-                        Write-Host "ERROR: Staging verification failed: $($_.Exception.Message)"
-                        if ($_.Exception.Response) {
-                            Write-Host "Response Status: $($_.Exception.Response.StatusCode)"
-                        }
+                    }
+                    
+                    if (-not $success) {
+                        Write-Host "`n✗✗✗ FINAL RESULT: Staging verification FAILED ✗✗✗"
+                        Write-Host "The website is not accessible at $url"
+                        Write-Host "Please review the diagnostics above and check:"
+                        Write-Host "  1. Event Viewer (eventvwr) → Windows Logs → Application"
+                        Write-Host "  2. ASP.NET Core Hosting Bundle installation"
+                        Write-Host "  3. App Pool configuration (No Managed Code, Integrated)"
+                        Write-Host "  4. Folder permissions (IIS_IUSRS, IUSR, App Pool identity)"
+                        Write-Host "  5. Port 8088 binding"
+                    } else {
+                        Write-Host "`n✓✓✓ FINAL RESULT: Staging verification SUCCEEDED ✓✓✓"
                     }
                 '''
             }
