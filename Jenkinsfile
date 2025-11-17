@@ -63,6 +63,9 @@ pipeline {
                     echo Cleaning NuGet cache...
                     dotnet nuget locals all --clear
 
+                    echo Installing WebAssembly workloads if needed...
+                    dotnet workload install wasm-tools wasm-tools-net8 --skip-sign-check 2>&1 | findstr /V "already installed" || echo Workloads check complete
+
                     echo Restoring solution...
                     dotnet restore %SOLUTION% --verbosity minimal /maxcpucount:1
                 '''
