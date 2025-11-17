@@ -207,13 +207,75 @@ pipeline {
 
                     Write-Host "Deploying to: $sitePath"
 
-                    if (!(Test-Path $sitePath)) {
-                        New-Item -ItemType Directory -Path $sitePath -Force
-                    } else {
-                        Get-ChildItem $sitePath -Recurse -File | Remove-Item -Force -ErrorAction SilentlyContinue
+                    # Step 1: Stop website and app pool to release file locks
+                    Write-Host "Stopping website and app pool to release file locks..."
+                    try {
+                        $website = Get-Website -Name $site -ErrorAction SilentlyContinue
+                        if ($website -and $website.State -eq "Started") {
+                            Stop-Website -Name $site -ErrorAction SilentlyContinue
+                            Write-Host "Website stopped"
+                        }
+                    } catch {
+                        Write-Host "Website not found or already stopped"
+                    }
+                    
+                    try {
+                        $poolState = (Get-WebAppPoolState -Name $pool -ErrorAction SilentlyContinue).Value
+                        if ($poolState -eq "Started") {
+                            Stop-WebAppPool -Name $pool -ErrorAction SilentlyContinue
+                            Write-Host "App pool stopped"
+                        }
+                    } catch {
+                        Write-Host "App pool not found or already stopped"
                     }
 
-                    Copy-Item "$publish\\*" $sitePath -Recurse -Force
+                    # Step 2: Wait for processes to release files (up to 30 seconds)
+                    Write-Host "Waiting for file locks to be released..."
+                    $maxWait = 30
+                    $waited = 0
+                    $filesLocked = $true
+                    while ($filesLocked -and $waited -lt $maxWait) {
+                        $lockedFiles = @()
+                        if (Test-Path "$sitePath\\Web.dll") {
+                            try {
+                                $file = [System.IO.File]::Open("$sitePath\\Web.dll", [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                                $file.Close()
+                                $filesLocked = $false
+                            } catch {
+                                $lockedFiles += "Web.dll"
+                            }
+                        } else {
+                            $filesLocked = $false
+                        }
+                        if ($filesLocked) {
+                            Start-Sleep -Seconds 2
+                            $waited += 2
+                            Write-Host "  Waiting... ($waited seconds)"
+                        }
+                    }
+                    
+                    if ($filesLocked) {
+                        Write-Host "WARNING: Some files may still be locked, attempting to kill worker processes..."
+                        Get-Process -Name "w3wp" -ErrorAction SilentlyContinue | Where-Object {
+                            $_.Path -like "*$pool*" -or (Get-WmiObject Win32_Process -Filter "ProcessId = $($_.Id)").CommandLine -like "*$pool*"
+                        } | Stop-Process -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Seconds 3
+                    }
+
+                    # Step 3: Create directory if needed
+                    if (!(Test-Path $sitePath)) {
+                        New-Item -ItemType Directory -Path $sitePath -Force
+                    }
+
+                    # Step 4: Remove old files (skip DLLs if still locked, they'll be overwritten)
+                    Write-Host "Cleaning old files..."
+                    Get-ChildItem $sitePath -Recurse -File -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.Extension -ne ".dll" -and $_.Extension -ne ".pdb" } | 
+                        Remove-Item -Force -ErrorAction SilentlyContinue
+                    
+                    # Step 5: Copy new files
+                    Write-Host "Copying new files..."
+                    Copy-Item "$publish\\*" $sitePath -Recurse -Force -ErrorAction Continue
 
                     # Logs folder
                     $logs = "$sitePath\\logs"
