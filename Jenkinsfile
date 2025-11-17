@@ -60,6 +60,20 @@ pipeline {
         stage('Restore') {
             steps {
                 bat '''
+                    echo Cleaning old BlazorAdmin build artifacts...
+                    if exist "src\\BlazorAdmin\\bin" (
+                        echo Removing src\\BlazorAdmin\\bin...
+                        rd /s /q "src\\BlazorAdmin\\bin"
+                    ) else (
+                        echo src\\BlazorAdmin\\bin not found
+                    )
+                    if exist "src\\BlazorAdmin\\obj" (
+                        echo Removing src\\BlazorAdmin\\obj...
+                        rd /s /q "src\\BlazorAdmin\\obj"
+                    ) else (
+                        echo src\\BlazorAdmin\\obj not found
+                    )
+
                     echo Cleaning NuGet cache...
                     "C:\\Program Files\\dotnet\\dotnet.exe" nuget locals all --clear
 
