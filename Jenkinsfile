@@ -174,8 +174,12 @@ pipeline {
         stage('Publish') {
             steps {
                 bat '''
-                    echo Publishing Web project...
-                    dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained
+                    echo Publishing Web project (excluding BlazorAdmin)...
+                    dotnet publish src\\Web\\Web.csproj -c %BUILD_CONFIG% -o %PUBLISH_DIR% --no-self-contained /p:BuildBlazorAdmin=false
+                    if errorlevel 1 (
+                        echo ERROR: Publish failed
+                        exit /b 1
+                    )
                     echo Verifying publish output...
                     if exist "%PUBLISH_DIR%\\Web.dll" (
                         echo Web.dll found

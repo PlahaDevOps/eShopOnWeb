@@ -1,8 +1,10 @@
 ﻿using System.Net.Mime;
 using Ardalis.ListStartupServices;
 // using Azure.Identity; // Removed for IIS deployment
+#if !SKIP_BLAZOR_ADMIN
 using BlazorAdmin;
 using BlazorAdmin.Services;
+#endif
 using Blazored.LocalStorage;
 using BlazorShared;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -117,9 +119,11 @@ else
 // add blazor services
 builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddServerSideBlazor();
+#if !SKIP_BLAZOR_ADMIN
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<HttpService>();
 builder.Services.AddBlazorServices();
+#endif
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 

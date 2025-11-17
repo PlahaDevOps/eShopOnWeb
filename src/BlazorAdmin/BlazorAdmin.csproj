@@ -4,9 +4,13 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(BuildBlazorAdmin)' == 'false'">
     <TargetsForBuild>SkipBuild</TargetsForBuild>
+    <TargetsForRestore>SkipRestore</TargetsForRestore>
   </PropertyGroup>
   <Target Name="SkipBuild">
     <Message Text="Skipping BlazorAdmin build (BuildBlazorAdmin=false)" Importance="high" />
+  </Target>
+  <Target Name="SkipRestore">
+    <Message Text="Skipping BlazorAdmin restore (BuildBlazorAdmin=false)" Importance="high" />
   </Target>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />

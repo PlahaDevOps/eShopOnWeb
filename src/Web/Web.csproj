@@ -7,6 +7,9 @@
     <UserSecretsId>aspnet-Web2-1FA3F72E-E7E3-4360-9E49-1CCCD7FE85F7</UserSecretsId>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(BuildBlazorAdmin)' == 'false'">
+    <DefineConstants>$(DefineConstants);SKIP_BLAZOR_ADMIN</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
     <Content Remove="compilerconfig.json" />
@@ -41,7 +44,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ApplicationCore\ApplicationCore.csproj" />
-    <ProjectReference Include="..\BlazorAdmin\BlazorAdmin.csproj" />
+    <ProjectReference Include="..\BlazorAdmin\BlazorAdmin.csproj" Condition="'$(BuildBlazorAdmin)' != 'false'" />
     <ProjectReference Include="..\BlazorShared\BlazorShared.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>
