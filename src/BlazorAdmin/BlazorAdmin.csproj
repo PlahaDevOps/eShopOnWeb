@@ -1,7 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
+    <WasmBuildEnabled>false</WasmBuildEnabled>
+    <RunAOTCompilation>false</RunAOTCompilation>
   </PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />
@@ -20,7 +23,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Compile Remove="Program.cs" />
 		<Compile Update="Services\CatalogItem\Delete.EditCatalogItemResult.cs">
 			<DependentUpon>Delete.cs</DependentUpon>
 		</Compile>
