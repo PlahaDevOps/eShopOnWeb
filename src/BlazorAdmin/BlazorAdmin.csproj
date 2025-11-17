@@ -5,14 +5,10 @@
     <IsPackable>false</IsPackable>
     <WasmBuildEnabled>false</WasmBuildEnabled>
     <RunAOTCompilation>false</RunAOTCompilation>
-    <PublishBlazorWebAssembly>false</PublishBlazorWebAssembly>
+    <ExcludeFromPublish>true</ExcludeFromPublish>
+    <IsPublishable>false</IsPublishable>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
   </PropertyGroup>
-  <Target Name="DisableWasmPublish" BeforeTargets="ResolveRuntimePack" Condition="'$(IsPublishing)' == 'true'">
-    <PropertyGroup>
-      <WasmBuildEnabled>false</WasmBuildEnabled>
-      <PublishBlazorWebAssembly>false</PublishBlazorWebAssembly>
-    </PropertyGroup>
-  </Target>
 	<ItemGroup>
 		<PackageReference Include="Blazored.LocalStorage" />
 		<PackageReference Include="BlazorInputFile" />
