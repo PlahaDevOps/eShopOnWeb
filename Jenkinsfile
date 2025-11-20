@@ -139,8 +139,12 @@ pipeline {
                                 echo .sonarqube folder exists
                             )
                             
-                            echo === BUILDING SOLUTION ===
-                            "C:\\Program Files\\dotnet\\dotnet.exe" build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false
+                            echo === BUILDING SOLUTION (excluding BlazorAdmin) ===
+                            "C:\\Program Files\\dotnet\\dotnet.exe" build %SOLUTION% -c %BUILD_CONFIG% /p:UseSharedCompilation=false /p:BuildProjectReferences=false
+                            "C:\\Program Files\\dotnet\\dotnet.exe" build src\\Web\\Web.csproj -c %BUILD_CONFIG% --no-restore
+                            "C:\\Program Files\\dotnet\\dotnet.exe" build src\\ApplicationCore\\ApplicationCore.csproj -c %BUILD_CONFIG% --no-restore
+                            "C:\\Program Files\\dotnet\\dotnet.exe" build src\\Infrastructure\\Infrastructure.csproj -c %BUILD_CONFIG% --no-restore
+                            "C:\\Program Files\\dotnet\\dotnet.exe" build src\\BlazorShared\\BlazorShared.csproj -c %BUILD_CONFIG% --no-restore
                             
                             if errorlevel 1 (
                                 echo ERROR: Build failed during SonarQube analysis
